@@ -153,18 +153,6 @@ const fitToMiddleSquare = (src: cv.Mat) => {
         width - 1, height - 1,
         0, height - 1
     ]);
-    console.log('srcPts', [
-        topLeft.x, topLeft.y,
-        topRight.x, topRight.y,
-        bottomRight.x, bottomRight.y,
-        bottomLeft.x, bottomLeft.y
-    ])
-    console.log('dstPts', [
-        0, 0,
-        width - 1, 0,
-        width - 1, height - 1,
-        0, height - 1
-    ])
 
     // Apply perspective transform
     const transform = cv.getPerspectiveTransform(srcPts, dstPts);
