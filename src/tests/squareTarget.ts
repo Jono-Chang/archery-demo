@@ -30,13 +30,13 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
     // Apply Gaussian Blur
-    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+    cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
 
     // Apply Canny edge detection
     cv.Canny(blurred, edges, 50, 150);
 
     // Apply Morphological Transformations to close gaps
-    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(10, 10));
     cv.morphologyEx(edges, morphed, cv.MORPH_CLOSE, kernel);
 
     // Find contours on the morphed image
@@ -63,6 +63,13 @@ const fitToMiddleSquare = (src: cv.Mat) => {
             const { perimeter, area } = calculatePerimeterAndArea(contour)
             const areaBasedOnPerimeter = Math.pow(perimeter / 4, 2);
             const isRoughlySquare = numbersAreClose(areaBasedOnPerimeter, area, 100000)
+            const color = new cv.Scalar(
+                Math.round(Math.random() * 255),
+                Math.round(Math.random() * 255),
+                Math.round(Math.random() * 255),
+                255
+            );
+            cv.drawContours(visual, contours, i, color, 2, cv.LINE_AA);
             if (!isRoughlySquare) continue;
 
             const { width: imageWidth, height: imageHeight } = src.size();
@@ -72,13 +79,13 @@ const fitToMiddleSquare = (src: cv.Mat) => {
             if (!isCenterInside) continue;
 
             // Draw the quadrilateral on the visual canvas
-            const color = new cv.Scalar(
-                Math.round(Math.random() * 255),
-                Math.round(Math.random() * 255),
-                Math.round(Math.random() * 255),
+            const color2 = new cv.Scalar(
+                255,
+                255,
+                255,
                 255
             );
-            cv.drawContours(visual, contours, i, color, 2, cv.LINE_AA);
+            cv.drawContours(visual, contours, i, color2, 2, cv.LINE_AA);
 
             // Keep track of the largest quadrilateral (assume it's the target)
             if (isCenterInside && isRoughlySquare && area > largestArea) {
@@ -93,11 +100,11 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     }
 
     // Visualize all detected quadrilaterals
-    // appendImage(gray);
-    // appendImage(blurred);
-    // appendImage(edges);
-    // appendImage(morphed);
-    // appendImage(visual);
+    appendImage(gray);
+    appendImage(blurred);
+    appendImage(edges);
+    appendImage(morphed);
+    appendImage(visual);
 
     // If a valid quadrilateral is found, isolate and warp it
     if (!largestQuad) return;
@@ -261,12 +268,12 @@ const fitToMiddleCircle = (src: cv.Mat) => {
     //     cv.LINE_AA // Line type (anti-aliased)
     // );
 
-    appendImage(gray);
-    appendImage(blurred);
-    appendImage(contrasted);
-    appendImage(edges);
-    appendImage(morphed);
-    appendImage(src);
+    // appendImage(gray);
+    // appendImage(blurred);
+    // appendImage(contrasted);
+    // appendImage(edges);
+    // appendImage(morphed);
+    // appendImage(src);
 
     const ellipseRadiusX = fittedEllipse.size.width / 2;
     const ellipseRadiusY = fittedEllipse.size.height / 2;
@@ -314,7 +321,46 @@ const drawInnerCircle = (src: cv.Mat, radius: number, color: cv.Scalar = new cv.
 }
 
 const arrowDetection = (src: cv.Mat) => {
+    const clone = src.clone();
+
+    // 2. Convert to grayscale
+    let gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    // 4. Detect edges using Canny edge detector
+    let edges = new cv.Mat();
+    cv.Canny(gray, edges, 50, 100);
     
+    // Apply Morphological Transformations to close gaps
+    let morphed = new cv.Mat();
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(2, 2));
+    cv.morphologyEx(edges, morphed, cv.MORPH_CLOSE, kernel);
+
+    // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
+    let lines = new cv.Mat();
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 100, 50, 10);  // Parameters for short lines
+
+    // 6. Draw the detected lines on the original image
+    for (let i = 0; i < lines.rows; i++) {
+        let x1 = lines.data32S[i * 4];
+        let y1 = lines.data32S[i * 4 + 1];
+        let x2 = lines.data32S[i * 4 + 2];
+        let y2 = lines.data32S[i * 4 + 3];
+        cv.line(clone, new cv.Point(x1, y1), new cv.Point(x2, y2), new cv.Scalar(255, 0, 0), 2, cv.LINE_AA);
+    }
+
+    // 7. Show the result
+    appendImage(src);
+    appendImage(gray);
+    appendImage(edges);
+    appendImage(morphed);
+    appendImage(clone);
+
+    // 8. Cleanup
+    gray.delete();
+    // blurred.delete();
+    edges.delete();
+    lines.delete();
 }
 
 export const squareTarget = (src: cv.Mat) => {
