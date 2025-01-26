@@ -328,7 +328,6 @@ const drawInnerCircle = (src: cv.Mat, radius: number, color: cv.Scalar = new cv.
     const innerCircleCenterX = centerX;
     const innerCircleCenterY = centerY;
     cv.circle(src, new cv.Point(innerCircleCenterX, innerCircleCenterY), radius, color, 2, cv.LINE_AA);
-    appendImage(src);
 }
 
 const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
@@ -356,9 +355,8 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
     const { width: imageWidth, height: imageHeight } = src.size();
     const centerX = imageWidth / 2;
     const centerY = imageHeight / 2;
-    const innerCircleCenterX = centerX;
-    const innerCircleCenterY = centerY;
-    cv.circle(clone, new cv.Point(innerCircleCenterX, innerCircleCenterY), outerCircleRadius, new cv.Scalar(255, 255, 255, 255), 2, cv.LINE_AA);
+    const centerPoint = new cv.Point(centerX, centerY);
+    cv.circle(clone, centerPoint, outerCircleRadius, new cv.Scalar(255, 255, 255, 255), 2, cv.LINE_AA);
 
     const lineStore: Array<[cv.Point, cv.Point]> = [];
     // 6. Draw the detected lines on the original image
@@ -399,6 +397,35 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
     // blurred.delete();
     edges.delete();
     lines.delete();
+
+    return {
+        dst: clone,
+        points: lineStore.map(([p1, p2]) => (p1)),
+        centerPoint
+    };
+}
+
+export const calculateResults = (src: cv.Mat, points: cv.Point[], centerPoint: cv.Point) => {
+    const smallestRadius = src.size().width / 2 * 0.07;
+    const outerCircleRadius = src.size().width / 2;
+    const increment = (outerCircleRadius - smallestRadius) / 9;
+    const results: number[] = [];
+    for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const distanceFromCenter = distanceBetweenPoints(point, centerPoint);
+        if (distanceFromCenter < smallestRadius) {
+            results.push(10);
+            continue;
+        }
+        results.push(10 - Math.ceil((distanceFromCenter - smallestRadius) / increment));
+    }
+
+    const clone = src.clone();
+    for (let i = 0; i < points.length; i++) {
+        cv.putText(clone, `${results[i]}`, points[i], cv.FONT_HERSHEY_SIMPLEX, 0.5, new cv.Scalar(255, 255, 255), 1);
+    }
+
+    return { dst: clone, results}
 }
 
 export const squareTarget = (src: cv.Mat) => {
@@ -408,5 +435,15 @@ export const squareTarget = (src: cv.Mat) => {
     appendImage(dst1);
     const dst2 = fitToMiddleCircle(dst1);
     if (!dst2) return;
-    const dst3 = arrowDetection(dst2, perspective1 as any);
+    const { dst: dst3, points, centerPoint } = arrowDetection(dst2, perspective1 as any) || {};
+    
+    // const clone = dst3.clone();
+    // for (let i = 0; i < 9; i++) {
+    //     drawInnerCircle(clone, smallestRadius + increment * i, new cv.Scalar(255, 255, 255, 255));
+    // }
+    // appendImage(clone);
+
+    const { dst: dst4, results } = calculateResults(dst3, points, centerPoint);
+    appendImage(dst4);
+    console.log(results)
 }
