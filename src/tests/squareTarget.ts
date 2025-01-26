@@ -209,8 +209,12 @@ const fitToMiddleCircle = (src: cv.Mat) => {
     cv.findContours(morphed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
     // Step 5: Iterate through the contours and fit ellipses
+    let largestContour: cv.Mat | null = null;
+    let largestArea = 0;
     for (let i = 0; i < contours.size(); i++) {
         const contour = contours.get(i);
+
+        const { area } = calculatePerimeterAndArea(contour)
 
         const { width: imageWidth, height: imageHeight } = src.size();
         const centerX = imageWidth / 2;
@@ -222,7 +226,28 @@ const fitToMiddleCircle = (src: cv.Mat) => {
         if (!isCenterInside) continue;
 
         cv.drawContours(src, contours, i, new cv.Scalar(255, 255, 0, 255), 2, cv.LINE_AA);
+
+        if (area > largestArea) {
+            largestArea = area;
+            largestContour = contour.clone();
+        }
     }
+
+    if (!largestContour) return;
+
+    const fittedEllipse = cv.fitEllipse(largestContour);
+    console.log('ellipse', fittedEllipse)
+    cv.ellipse(
+        src, // Input/output image
+        fittedEllipse.center, // Center coordinates
+        new cv.Size(fittedEllipse.size.width / 2, fittedEllipse.size.height / 2), // Radii of the ellipse
+        fittedEllipse.angle, // Rotation angle 
+        0, // Starting angle (0 degrees)
+        360, // Ending angle (360 degrees)
+        new cv.Scalar(0, 0, 255), // Color of the ellipse (red)
+        2, // Thickness of the ellipse outline
+        cv.LINE_AA // Line type (anti-aliased)
+    );
 
     appendImage(gray);
     appendImage(blurred);
