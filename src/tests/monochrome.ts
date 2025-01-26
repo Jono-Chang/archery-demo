@@ -58,7 +58,7 @@ export const monochrome = (src: cv.Mat) => {
 
     // Define the range for light blue in HSV
     const lowerBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [70, 100, 110, 0]); // Lower bound
-    const upperBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [200, 200, 160, 0]); // Upper bound
+    const upperBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [200, 200, 180, 0]); // Upper bound
 
     // Create a mask for light blue
     let mask = new cv.Mat();
