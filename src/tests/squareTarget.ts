@@ -24,6 +24,24 @@ const numbersAreClose = (a: number, b: number, epsilon: number = 0.01) => {
 const distanceBetweenPoints = (p1: cv.Point, p2: cv.Point) => {
     return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 }
+const removeOutliers = (data: number[]) => {
+    // Sort the array
+    const sorted = [...data].sort((a, b) => a - b);
+    
+    // Find the first quartile (Q1) and third quartile (Q3)
+    const q1 = sorted[Math.floor((sorted.length / 4))];
+    const q3 = sorted[Math.ceil((sorted.length * 3) / 4 - 1)];
+    
+    // Calculate the interquartile range (IQR)
+    const iqr = q3 - q1;
+    
+    // Define the bounds for outliers
+    const lowerBound = q1 - 1.5 * iqr;
+    const upperBound = q3 + 1.5 * iqr;
+    
+    // Filter the data to exclude outliers
+    return data.filter(value => value >= lowerBound && value <= upperBound);
+  }
 
 const fitToMiddleSquare = (src: cv.Mat) => {
     const gray = new cv.Mat();
@@ -366,11 +384,19 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
         
         const distanceFromCenter = distanceBetweenPoints(targetPoint, new cv.Point(centerX, centerY));
         if (distanceFromCenter > outerCircleRadius) continue;
-
-        cv.line(clone, new cv.Point(x1, y1), new cv.Point(x2, y2), new cv.Scalar(255, 0, 0), 1, cv.LINE_AA);
-        cv.circle(clone, targetPoint, 1, new cv.Scalar(255, 0, 0), -1);
-        
         lineStore.push([targetPoint, tailPoint]);
+    }
+
+    // Remove length outliers
+    const lengths = lineStore.map(([p1, p2]) => distanceBetweenPoints(p1, p2));
+    const nonOutlierLengths = removeOutliers(lengths);
+    const filteredLineStore = lineStore.filter((_, i) => nonOutlierLengths.includes(lengths[i]));
+
+    // Draw the detected lines on the original image
+    for (let i = 0; i < filteredLineStore.length; i++) {
+        const [targetPoint, tailPoint] = filteredLineStore[i];
+        cv.line(clone, targetPoint, tailPoint, new cv.Scalar(255, 255, 255), 1, cv.LINE_AA);
+        cv.circle(clone, targetPoint, 1, new cv.Scalar(0, 255, 0), -1);
     }
 
     // 7. Show the result
@@ -388,7 +414,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
 
     return {
         dst: clone,
-        points: lineStore.map(([p1, p2]) => (p1)),
+        points: filteredLineStore.map(([p1, p2]) => (p1)),
         centerPoint
     };
 }
