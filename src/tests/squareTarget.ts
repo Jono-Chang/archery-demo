@@ -351,18 +351,21 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
     let gray = new cv.Mat();
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
+    const blurred = gray;
+    cv.GaussianBlur(blurred, gray, new cv.Size(0, 0), 1.1);
+
     // 4. Detect edges using Canny edge detector
     let edges = new cv.Mat();
-    cv.Canny(gray, edges, 50, 100);
+    cv.Canny(blurred, edges, 50, 100);
     
     // Apply Morphological Transformations to close gaps
     let morphed = new cv.Mat();
-    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(2, 2));
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(4, 4));
     cv.morphologyEx(edges, morphed, cv.MORPH_CLOSE, kernel);
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 100, 50, 10);  // Parameters for short lines
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 100, 60, 10);  // Parameters for short lines
 
     // Draw outer circle
     const outerCircleRadius = src.size().width / 2 * REFERENCE_CIRCLE_SCALING * OUTER_CIRCLE_SCALING;
@@ -398,7 +401,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
     // Remove length outliers
     const lengths = lineStore.map(([p1, p2]) => distanceBetweenPoints(p1, p2));
     const nonOutlierLengths = removeOutliers(lengths);
-    const filteredLineStore = lineStore.filter((_, i) => nonOutlierLengths.includes(lengths[i]));
+    const filteredLineStore = lineStore//.filter((_, i) => nonOutlierLengths.includes(lengths[i]));
 
     // Draw the detected lines on the original image
     for (let i = 0; i < filteredLineStore.length; i++) {
