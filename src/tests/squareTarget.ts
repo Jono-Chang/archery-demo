@@ -431,7 +431,7 @@ export const squareTarget = (src: cv.Mat) => {
     // }
     // appendImage(clone);
 
-    const { dst: dst4, results } = calculateResults(dst3, points, centerPoint);
+    const { dst: dst4, results } = calculateResults(dst2, points, centerPoint);
     appendImage(dst4);
     console.log(results)
 }
