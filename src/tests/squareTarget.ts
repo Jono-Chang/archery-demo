@@ -3,6 +3,9 @@ import cv from "@techstark/opencv-js";
 import { appendImage } from "../helper/appendImage";
 
 const REFERENCE_CIRCLE_SCALING = 0.7;
+const OUTER_CIRCLE_SCALING = 1.29;
+
+const ARROW_MIN_DISTANCE = 10;
 
 const calculatePerimeterAndArea = (contour: cv.Mat) => {
     // Calculate perimeter (arc length)
@@ -16,6 +19,10 @@ const calculatePerimeterAndArea = (contour: cv.Mat) => {
 
 const numbersAreClose = (a: number, b: number, epsilon: number = 0.01) => {
     return Math.abs(a - b) < epsilon;
+}
+
+const distanceBetweenPoints = (p1: cv.Point, p2: cv.Point) => {
+    return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 }
 
 const fitToMiddleSquare = (src: cv.Mat) => {
@@ -120,6 +127,10 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     const [topLeft, topRight] = points.slice(0, 2).sort((a, b) => a.x - b.x);
     const [bottomLeft, bottomRight] = points.slice(2).sort((a, b) => a.x - b.x);
 
+    const leftHeight = Math.abs(topLeft.y - bottomLeft.y);
+    const rightHeight = Math.abs(topRight.y - bottomRight.y);
+    const perspective = leftHeight > rightHeight ? 'left' : 'right';
+
     // Define destination points for perspective transform
     const width = Math.max(
         Math.hypot(topRight.x - topLeft.x, topRight.y - topLeft.y),
@@ -168,7 +179,7 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     srcPts.delete();
     dstPts.delete();
     transform.delete();
-    return dst;
+    return { dst, perspective };
 }
 
 const calculateArcAngles = (ellipse: cv.RotatedRect) => {
@@ -320,7 +331,7 @@ const drawInnerCircle = (src: cv.Mat, radius: number, color: cv.Scalar = new cv.
     appendImage(src);
 }
 
-const arrowDetection = (src: cv.Mat) => {
+const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
     const clone = src.clone();
 
     // 2. Convert to grayscale
@@ -340,13 +351,40 @@ const arrowDetection = (src: cv.Mat) => {
     let lines = new cv.Mat();
     cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 100, 50, 10);  // Parameters for short lines
 
+    // Draw outer circle
+    const outerCircleRadius = src.size().width / 2 * REFERENCE_CIRCLE_SCALING * OUTER_CIRCLE_SCALING;
+    const { width: imageWidth, height: imageHeight } = src.size();
+    const centerX = imageWidth / 2;
+    const centerY = imageHeight / 2;
+    const innerCircleCenterX = centerX;
+    const innerCircleCenterY = centerY;
+    cv.circle(clone, new cv.Point(innerCircleCenterX, innerCircleCenterY), outerCircleRadius, new cv.Scalar(255, 255, 255, 255), 2, cv.LINE_AA);
+
+    const lineStore: Array<[cv.Point, cv.Point]> = [];
     // 6. Draw the detected lines on the original image
     for (let i = 0; i < lines.rows; i++) {
         let x1 = lines.data32S[i * 4];
         let y1 = lines.data32S[i * 4 + 1];
         let x2 = lines.data32S[i * 4 + 2];
         let y2 = lines.data32S[i * 4 + 3];
-        cv.line(clone, new cv.Point(x1, y1), new cv.Point(x2, y2), new cv.Scalar(255, 0, 0), 2, cv.LINE_AA);
+
+        const targetPoint = perspective === 'left' ? new cv.Point(x1, y1) : new cv.Point(x2, y2);
+        const tailPoint = perspective === 'left' ? new cv.Point(x2, y2) : new cv.Point(x1, y1);
+
+        if (lineStore.some(
+            ([p1, p2]) => distanceBetweenPoints(targetPoint, p1) < ARROW_MIN_DISTANCE
+              || distanceBetweenPoints(tailPoint, p2) < ARROW_MIN_DISTANCE
+        )) {
+            continue;
+        }
+        
+        const distanceFromCenter = distanceBetweenPoints(targetPoint, new cv.Point(centerX, centerY));
+        if (distanceFromCenter > outerCircleRadius) continue;
+
+        cv.line(clone, new cv.Point(x1, y1), new cv.Point(x2, y2), new cv.Scalar(255, 0, 0), 1, cv.LINE_AA);
+        cv.circle(clone, targetPoint, 1, new cv.Scalar(255, 0, 0), -1);
+        
+        lineStore.push([targetPoint, tailPoint]);
     }
 
     // 7. Show the result
@@ -365,10 +403,10 @@ const arrowDetection = (src: cv.Mat) => {
 
 export const squareTarget = (src: cv.Mat) => {
     appendImage(src);
-    const dst1 = fitToMiddleSquare(src);
+    const { dst: dst1, perspective: perspective1 } = fitToMiddleSquare(src) || {};   
     if (!dst1) return;
     appendImage(dst1);
     const dst2 = fitToMiddleCircle(dst1);
     if (!dst2) return;
-    const dst3 = arrowDetection(dst2);
+    const dst3 = arrowDetection(dst2, perspective1 as any);
 }
