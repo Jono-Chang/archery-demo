@@ -150,120 +150,86 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     return dst;
 }
 
-const smoothCircularContour = (contour: cv.Mat) => {
-    // Step 1: Approximate the contour
-  const epsilon = 0.01 * cv.arcLength(contour, true); // Adjust epsilon to control smoothing
-  const approx = new cv.Mat();
-  cv.approxPolyDP(contour, approx, epsilon, true);
+const calculateArcAngles = (ellipse: cv.RotatedRect) => {
+    const center = ellipse.center;
+    console.log('ellipse', ellipse)
+    const { width, height } = ellipse.size;
+    const angle = ellipse.angle; // Rotation of the ellipse in degrees
 
-  // Step 2: Fit a minimum enclosing circle
-  const center = new cv.Point(0, 0);
-  const radius = new cv.Mat();
-  cv.fitEllipse(approx);
+    // To compute angles, we need to find the points on the ellipse
+    // For simplicity, let's assume we are looking at two specific points on the ellipse.
 
-  // Step 3: Generate a smooth circular contour
-  const smoothedContour = new cv.Mat();
-  const numPoints = 100; // Number of points for the smooth circle
-  const angleStep = (2 * Math.PI) / numPoints;
+    // Convert the angle of the ellipse to radians
+    const angleRad = angle * Math.PI / 180;
 
-  for (let i = 0; i < numPoints; i++) {
-    const theta = i * angleStep;
-    const x = center.x + radius.data64F[0] * Math.cos(theta);
-    const y = center.y + radius.data64F[0] * Math.sin(theta);
-    smoothedContour.push_back(new cv.Mat([new cv.Point(x, y)]));
-  }
+    // Calculate the points for the start and end of the arc (for example, on the major axis)
+    const startPoint = new cv.Point(
+        center.x + width * Math.cos(angleRad),
+        center.y + height * Math.sin(angleRad)
+    );
+    const endPoint = new cv.Point(
+        center.x - width * Math.cos(angleRad),
+        center.y - height * Math.sin(angleRad)
+    );
 
-  // Cleanup
-  approx.delete();
-  radius.delete();
+    // Now calculate the angle from the center to the points
+    const startAngle = Math.atan2(startPoint.y - center.y, startPoint.x - center.x) * 180 / Math.PI;
+    const endAngle = Math.atan2(endPoint.y - center.y, endPoint.x - center.x) * 180 / Math.PI;
 
-  return smoothedContour;
+    // Normalize angles to be in the range [0, 360)
+    const normalizedStartAngle = (startAngle + 360) % 360;
+    const normalizedEndAngle = (endAngle + 360) % 360;
+
+    return { startAngle: normalizedStartAngle, endAngle: normalizedEndAngle };
 }
 
-
 const fitToMiddleCircle = (src: cv.Mat) => {
+    // Step 1: Convert to grayscale
     const gray = new cv.Mat();
-    const blurred = new cv.Mat();
-    const edges = new cv.Mat();
-    const morphed = new cv.Mat();
-    const contours = new cv.MatVector();
-    const hierarchy = new cv.Mat();
-
-    // Convert to grayscale
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    // Apply Gaussian Blur
+    // Step 2: Apply Gaussian blur to reduce noise
+    const blurred = new cv.Mat();
     cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
-    // Apply Canny edge detection
-    cv.Canny(blurred, edges, 1, 150);
+    const contrasted = new cv.Mat();
+    cv.threshold(blurred, contrasted, 50, 255, cv.THRESH_BINARY);
 
-    // Apply Morphological Transformations to close gaps
+    // Step 3: Apply edge detection (Canny)
+    const edges = new cv.Mat();
+    cv.Canny(contrasted, edges, 200, 2);
+
+    const morphed = new cv.Mat();
     const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
     cv.morphologyEx(edges, morphed, cv.MORPH_CLOSE, kernel);
 
-    // Find contours on the morphed image
-    cv.findContours(morphed, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
+    // Step 4: Find contours
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    cv.findContours(morphed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-    // Clone the original image for visualization
-    const visual = src.clone();
-
-    // Initialize variables
-    let largestQuad = null;
-    let largestArea = 0;
-
-    appendImage(gray);
-    appendImage(blurred);
-    appendImage(edges);
-    appendImage(morphed);
-
-    // Loop through all contours
+    // Step 5: Iterate through the contours and fit ellipses
     for (let i = 0; i < contours.size(); i++) {
         const contour = contours.get(i);
-        const approx = new cv.Mat();
-
-        // Approximate the contour to simplify it
-        cv.approxPolyDP(contour, approx, 0.03 * cv.arcLength(contour, true), true);
-
-        const { perimeter, area } = calculatePerimeterAndArea(contour)
-        const areaBasedOnPerimeter = Math.pow(perimeter / 4, 2);
 
         const { width: imageWidth, height: imageHeight } = src.size();
         const centerX = imageWidth / 2;
         const centerY = imageHeight / 2;
         const isCenterInside = cv.pointPolygonTest(contour, { x: centerX, y: centerY }, false) >= 0;
+        cv.circle(src, new cv.Point(centerX, centerY), 5, new cv.Scalar(0, 0, 255, 255), -1);
+        cv.drawContours(src, contours, i, new cv.Scalar(255, 0, 0, 255), 2, cv.LINE_AA);
+        console.log('isCenterInside', isCenterInside)
         if (!isCenterInside) continue;
 
-        // Draw the quadrilateral on the visual canvas
-        const color = new cv.Scalar(
-            Math.round(Math.random() * 255),
-            Math.round(Math.random() * 255),
-            Math.round(Math.random() * 255),
-            255
-        );
-        cv.drawContours(visual, contours, i, color, 2, cv.LINE_AA);
-
-        // smoothCircularContour(contour);
-        // const color2 = new cv.Scalar(255, 255, 255, 255); // Blue
-        // let matVec = new cv.MatVector();
-        // const smootheresMat = smoothCircularContour(contours.get(3))
-        // matVec.push_back(smootheresMat);
-        // cv.drawContours(visual, matVec, 0, color2, 2, cv.LINE_AA);
-
-
-        // Keep track of the largest quadrilateral (assume it's the target)
-        if (isCenterInside && area > largestArea) {
-            console.log('test')
-            const color = new cv.Scalar(255, 255, 255, 255); // Blue
-            cv.drawContours(visual, contours, i, color, 2, cv.LINE_AA);
-
-            largestArea = area;
-            largestQuad = approx.clone();
-        }
-        approx.delete();
+        cv.drawContours(src, contours, i, new cv.Scalar(255, 255, 0, 255), 2, cv.LINE_AA);
     }
 
-    appendImage(visual);
+    appendImage(gray);
+    appendImage(blurred);
+    appendImage(contrasted);
+    appendImage(edges);
+    appendImage(morphed);
+    appendImage(src);
 }
 
 export const squareTarget = (src: cv.Mat) => {
