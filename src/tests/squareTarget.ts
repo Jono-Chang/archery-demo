@@ -133,6 +133,18 @@ const fitToMiddleSquare = (src: cv.Mat) => {
         width - 1, height - 1,
         0, height - 1
     ]);
+    console.log('srcPts', [
+        topLeft.x, topLeft.y,
+        topRight.x, topRight.y,
+        bottomRight.x, bottomRight.y,
+        bottomLeft.x, bottomLeft.y
+    ])
+    console.log('dstPts', [
+        0, 0,
+        width - 1, 0,
+        width - 1, height - 1,
+        0, height - 1
+    ])
 
     // Apply perspective transform
     const transform = cv.getPerspectiveTransform(srcPts, dstPts);
@@ -184,6 +196,10 @@ const calculateArcAngles = (ellipse: cv.RotatedRect) => {
 }
 
 const fitToMiddleCircle = (src: cv.Mat) => {
+    const { width: imageWidth, height: imageHeight } = src.size();
+    const centerX = imageWidth / 2;
+    const centerY = imageHeight / 2;
+
     // Step 1: Convert to grayscale
     const gray = new cv.Mat();
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
@@ -215,10 +231,6 @@ const fitToMiddleCircle = (src: cv.Mat) => {
         const contour = contours.get(i);
 
         const { area } = calculatePerimeterAndArea(contour)
-
-        const { width: imageWidth, height: imageHeight } = src.size();
-        const centerX = imageWidth / 2;
-        const centerY = imageHeight / 2;
         const isCenterInside = cv.pointPolygonTest(contour, { x: centerX, y: centerY }, false) >= 0;
         cv.circle(src, new cv.Point(centerX, centerY), 5, new cv.Scalar(0, 0, 255, 255), -1);
         cv.drawContours(src, contours, i, new cv.Scalar(255, 0, 0, 255), 2, cv.LINE_AA);
@@ -242,8 +254,8 @@ const fitToMiddleCircle = (src: cv.Mat) => {
         fittedEllipse.center, // Center coordinates
         new cv.Size(fittedEllipse.size.width / 2, fittedEllipse.size.height / 2), // Radii of the ellipse
         fittedEllipse.angle, // Rotation angle 
-        0, // Starting angle (0 degrees)
-        360, // Ending angle (360 degrees)
+        fittedEllipse.angle - 180, // Starting angle (0 degrees)
+        fittedEllipse.angle + 180, // Ending angle (360 degrees)
         new cv.Scalar(0, 0, 255), // Color of the ellipse (red)
         2, // Thickness of the ellipse outline
         cv.LINE_AA // Line type (anti-aliased)
@@ -255,6 +267,34 @@ const fitToMiddleCircle = (src: cv.Mat) => {
     appendImage(edges);
     appendImage(morphed);
     appendImage(src);
+
+    const ellipseRadiusX = fittedEllipse.size.width / 2;
+    const ellipseRadiusY = fittedEllipse.size.height / 2;
+    const ellipseCenterX = fittedEllipse.center.x;
+    const ellipseCenterY = fittedEllipse.center.y;
+    const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+        ellipseCenterX - ellipseRadiusX, ellipseCenterY,  // left
+        ellipseCenterX + ellipseRadiusX, ellipseCenterY,  // right
+        ellipseCenterX, ellipseCenterY - ellipseRadiusY,  // top
+        centerX, ellipseCenterY + ellipseRadiusY   // bottom
+    ]);
+
+    const radius = src.size().width / 2 * 0.7;
+    // Define destination points for perspective transform
+    const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+        // You would map those points to form a circle
+        centerX - radius, centerY,  // left
+        centerX + radius, centerY,  // right
+        centerX, centerY - radius,  // top
+        centerX, centerY + radius   // bottom
+    ]);
+
+    // Apply perspective transform
+    const transform = cv.getPerspectiveTransform(srcPts, dstPts);
+    const dst = new cv.Mat();
+    cv.warpPerspective(src, dst, transform, src.size());
+    appendImage(dst);
+    return dst;
 }
 
 export const squareTarget = (src: cv.Mat) => {
