@@ -2,6 +2,8 @@
 import cv from "@techstark/opencv-js";
 import { appendImage } from "../helper/appendImage";
 
+const REFERENCE_CIRCLE_SCALING = 0.7;
+
 const calculatePerimeterAndArea = (contour: cv.Mat) => {
     // Calculate perimeter (arc length)
     const perimeter = cv.arcLength(contour, true);
@@ -232,12 +234,11 @@ const fitToMiddleCircle = (src: cv.Mat) => {
 
         const { area } = calculatePerimeterAndArea(contour)
         const isCenterInside = cv.pointPolygonTest(contour, { x: centerX, y: centerY }, false) >= 0;
-        cv.circle(src, new cv.Point(centerX, centerY), 5, new cv.Scalar(0, 0, 255, 255), -1);
-        cv.drawContours(src, contours, i, new cv.Scalar(255, 0, 0, 255), 2, cv.LINE_AA);
-        console.log('isCenterInside', isCenterInside)
+        // cv.circle(src, new cv.Point(centerX, centerY), 5, new cv.Scalar(0, 0, 255, 255), -1);
+        // cv.drawContours(src, contours, i, new cv.Scalar(255, 0, 0, 255), 2, cv.LINE_AA);
         if (!isCenterInside) continue;
 
-        cv.drawContours(src, contours, i, new cv.Scalar(255, 255, 0, 255), 2, cv.LINE_AA);
+        // cv.drawContours(src, contours, i, new cv.Scalar(255, 255, 0, 255), 2, cv.LINE_AA);
 
         if (area > largestArea) {
             largestArea = area;
@@ -248,18 +249,17 @@ const fitToMiddleCircle = (src: cv.Mat) => {
     if (!largestContour) return;
 
     const fittedEllipse = cv.fitEllipse(largestContour);
-    console.log('ellipse', fittedEllipse)
-    cv.ellipse(
-        src, // Input/output image
-        fittedEllipse.center, // Center coordinates
-        new cv.Size(fittedEllipse.size.width / 2, fittedEllipse.size.height / 2), // Radii of the ellipse
-        fittedEllipse.angle, // Rotation angle 
-        fittedEllipse.angle - 180, // Starting angle (0 degrees)
-        fittedEllipse.angle + 180, // Ending angle (360 degrees)
-        new cv.Scalar(0, 0, 255), // Color of the ellipse (red)
-        2, // Thickness of the ellipse outline
-        cv.LINE_AA // Line type (anti-aliased)
-    );
+    // cv.ellipse(
+    //     src, // Input/output image
+    //     fittedEllipse.center, // Center coordinates
+    //     new cv.Size(fittedEllipse.size.width / 2, fittedEllipse.size.height / 2), // Radii of the ellipse
+    //     fittedEllipse.angle, // Rotation angle 
+    //     fittedEllipse.angle - 180, // Starting angle (0 degrees)
+    //     fittedEllipse.angle + 180, // Ending angle (360 degrees)
+    //     new cv.Scalar(0, 0, 255), // Color of the ellipse (red)
+    //     2, // Thickness of the ellipse outline
+    //     cv.LINE_AA // Line type (anti-aliased)
+    // );
 
     appendImage(gray);
     appendImage(blurred);
@@ -279,7 +279,7 @@ const fitToMiddleCircle = (src: cv.Mat) => {
         centerX, ellipseCenterY + ellipseRadiusY   // bottom
     ]);
 
-    const radius = src.size().width / 2 * 0.7;
+    const radius = src.size().width / 2 * REFERENCE_CIRCLE_SCALING;
     // Define destination points for perspective transform
     const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
         // You would map those points to form a circle
@@ -297,11 +297,32 @@ const fitToMiddleCircle = (src: cv.Mat) => {
     return dst;
 }
 
+const drawInnerCircle = (src: cv.Mat, radius: number, color: cv.Scalar = new cv.Scalar(255, 0, 0, 255)) => {
+    // Example usage
+    // const referenceRadius = dst2.size().width / 2 * REFERENCE_CIRCLE_SCALING;
+    // drawInnerCircle(dst2, referenceRadius * 0.25, new cv.Scalar(255, 255, 0, 255));
+    // drawInnerCircle(dst2, referenceRadius * 0.5, new cv.Scalar(255, 0, 0, 255));
+    // drawInnerCircle(dst2, referenceRadius * 0.74, new cv.Scalar(0, 0, 255, 255));
+    // drawInnerCircle(dst2, referenceRadius, new cv.Scalar(0, 0, 0, 255));
+    const { width: imageWidth, height: imageHeight } = src.size();
+    const centerX = imageWidth / 2;
+    const centerY = imageHeight / 2;
+    const innerCircleCenterX = centerX;
+    const innerCircleCenterY = centerY;
+    cv.circle(src, new cv.Point(innerCircleCenterX, innerCircleCenterY), radius, color, 2, cv.LINE_AA);
+    appendImage(src);
+}
+
+const arrowDetection = (src: cv.Mat) => {
+    
+}
+
 export const squareTarget = (src: cv.Mat) => {
     appendImage(src);
     const dst1 = fitToMiddleSquare(src);
     if (!dst1) return;
     appendImage(dst1);
     const dst2 = fitToMiddleCircle(dst1);
-
+    if (!dst2) return;
+    const dst3 = arrowDetection(dst2);
 }
