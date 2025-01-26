@@ -5,6 +5,7 @@ import cv from "@techstark/opencv-js";
 import { crop } from './tests/crop';
 import { pointRings } from './tests/pointRings';
 import { squareTarget } from './tests/squareTarget';
+import { monochrome } from './tests/monochrome';
 
 function App() {
 
@@ -47,7 +48,7 @@ function App() {
       {
         <img
           id="testImage"
-          src={'/test/test2.jpg'}
+          src={'/test/test6.jpg'}
           alt="Image"
           style={{ display:'none' }}
           onLoad={(e) => {

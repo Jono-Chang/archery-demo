@@ -1,6 +1,7 @@
 
 import cv from "@techstark/opencv-js";
 import { appendImage } from "../helper/appendImage";
+import { monochrome } from "./monochrome";
 
 const REFERENCE_CIRCLE_SCALING = 0.7;
 const OUTER_CIRCLE_SCALING = 1.29;
@@ -9,7 +10,9 @@ const ARROW_MIN_DISTANCE = 10;
 
 const calculatePerimeterAndArea = (contour: cv.Mat) => {
     // Calculate perimeter (arc length)
-    const perimeter = cv.arcLength(contour, true);
+    // const perimeter = cv.arcLength(contour, true);
+    const rect = cv.boundingRect(contour);
+    const perimeter = (rect.width + rect.height) * 2;
 
     // Calculate area
     const area = cv.contourArea(contour);
@@ -46,19 +49,24 @@ const removeOutliers = (data: number[]) => {
 const fitToMiddleSquare = (src: cv.Mat) => {
     const gray = new cv.Mat();
     const blurred = new cv.Mat();
+    const filtered = new cv.Mat();
     const edges = new cv.Mat();
     const morphed = new cv.Mat();
     const contours = new cv.MatVector();
     const hierarchy = new cv.Mat();
 
+    const mono = monochrome(src);
+
     // Convert to grayscale
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(mono, gray, cv.COLOR_RGBA2GRAY);
 
     // Apply Gaussian Blur
-    cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
+    cv.GaussianBlur(gray, blurred, new cv.Size(0, 0), 30);
+
+    cv.threshold(blurred, filtered, 50, 255, cv.THRESH_BINARY);
 
     // Apply Canny edge detection
-    cv.Canny(blurred, edges, 50, 150);
+    cv.Canny(filtered, edges, 10, 450);
 
     // Apply Morphological Transformations to close gaps
     const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(10, 10));
