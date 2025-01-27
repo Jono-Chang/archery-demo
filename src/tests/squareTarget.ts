@@ -63,18 +63,18 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     cv.GaussianBlur(gray, blurred, new cv.Size(0, 0), 5);
     
     const sharpened = new cv.Mat();
-    cv.addWeighted(gray, 2, blurred, -1.8, 0, sharpened);
+    cv.addWeighted(gray, 2, blurred, -2,0, sharpened);
     appendImage(sharpened, 'sharpen');
 
 
     // Apply Gaussian Blur
     const blur2 = new cv.Mat();
-    cv.GaussianBlur(sharpened, blur2, new cv.Size(0, 0), 5);
+    cv.GaussianBlur(sharpened, blur2, new cv.Size(0, 0), 8);
     appendImage(blur2, 'blur2');
 
     // Apply Canny edge detection
     
-    cv.Canny(blur2, edges, 200, 300, 5, true);
+    cv.Canny(blur2, edges, 100, 150, 5, true);
     appendImage(edges, 'Canny');
 
     
@@ -84,7 +84,7 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     appendImage(morphed, 'morphed');
 
     const lines = new cv.Mat();
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 10, 400, 10);
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 10, 400, 20);
 
     // Draw the detected lines on the original image
     for (let i = 0; i < lines.rows; i++) {
