@@ -54,21 +54,45 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     const morphed = new cv.Mat();
     const contours = new cv.MatVector();
     const hierarchy = new cv.Mat();
-    const mono = monochrome(src);
+    // const mono = monochrome(src);
 
     // Convert to grayscale
-    cv.cvtColor(mono, gray, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
     // Apply Gaussian Blur
-    cv.GaussianBlur(gray, blurred, new cv.Size(0, 0), 4);
+    cv.GaussianBlur(gray, blurred, new cv.Size(0, 0), 5);
+    
+    const sharpened = new cv.Mat();
+    cv.addWeighted(gray, 2, blurred, -1.8, 0, sharpened);
+    appendImage(sharpened, 'sharpen');
+
+
+    // Apply Gaussian Blur
+    const blur2 = new cv.Mat();
+    cv.GaussianBlur(sharpened, blur2, new cv.Size(0, 0), 5);
+    appendImage(blur2, 'blur2');
 
     // Apply Canny edge detection
     
-    cv.Canny(blurred, edges, 30, 900, 5, true);
+    cv.Canny(blur2, edges, 200, 300, 5, true);
+    appendImage(edges, 'Canny');
 
+    
     // Apply Morphological Transformations to close gaps
-    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(20, 20));
-    cv.morphologyEx(edges, morphed, cv.MORPH_CLOSE, kernel);
+    const kernel = cv.getStructuringElement(cv.MORPH_ERODE, new cv.Size(10, 10));
+    cv.morphologyEx(edges, morphed, cv.MORPH_CROSS, kernel);
+    appendImage(morphed, 'morphed');
+
+    const lines = new cv.Mat();
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 10, 400, 10);
+
+    // Draw the detected lines on the original image
+    for (let i = 0; i < lines.rows; i++) {
+      const [x1, y1, x2, y2] = lines.data32S.slice(i * 4, (i + 1) * 4);
+      cv.line(src, new cv.Point(x1, y1), new cv.Point(x2, y2), [255, 0, 0, 255], 2); // Red lines
+    }
+
+    appendImage(src, 'HoughLinesP');
 
     // Find contours on the morphed image
     cv.findContours(morphed, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
@@ -131,67 +155,69 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     }
 
     // Visualize all detected quadrilaterals
-    appendImage(gray);
-    appendImage(blurred);
+    // appendImage(gray);
+    // appendImage(blurred);
     appendImage(edges);
     appendImage(morphed);
     appendImage(visual);
 
-    // If a valid quadrilateral is found, isolate and warp it
-    if (!largestQuad) return;
+    return { dst: visual, perspective: 'left' }
 
-    const points = [];
-    for (let i = 0; i < largestQuad.rows; i++) {
-        const point = largestQuad.data32S.slice(i * 2, i * 2 + 2);
-        points.push({ x: point[0], y: point[1] });
-    }
+    // // If a valid quadrilateral is found, isolate and warp it
+    // if (!largestQuad) return;
 
-    // Sort points (top-left, top-right, bottom-right, bottom-left)
-    points.sort((a, b) => a.y - b.y);
-    const [topLeft, topRight] = points.slice(0, 2).sort((a, b) => a.x - b.x);
-    const [bottomLeft, bottomRight] = points.slice(2).sort((a, b) => a.x - b.x);
+    // const points = [];
+    // for (let i = 0; i < largestQuad.rows; i++) {
+    //     const point = largestQuad.data32S.slice(i * 2, i * 2 + 2);
+    //     points.push({ x: point[0], y: point[1] });
+    // }
 
-    const leftHeight = Math.abs(topLeft.y - bottomLeft.y);
-    const rightHeight = Math.abs(topRight.y - bottomRight.y);
-    const perspective = leftHeight > rightHeight ? 'left' : 'right';
+    // // Sort points (top-left, top-right, bottom-right, bottom-left)
+    // points.sort((a, b) => a.y - b.y);
+    // const [topLeft, topRight] = points.slice(0, 2).sort((a, b) => a.x - b.x);
+    // const [bottomLeft, bottomRight] = points.slice(2).sort((a, b) => a.x - b.x);
 
-    // Define destination points for perspective transform
-    const width = Math.max(
-        Math.hypot(topRight.x - topLeft.x, topRight.y - topLeft.y),
-        Math.hypot(bottomRight.x - bottomLeft.x, bottomRight.y - bottomLeft.y)
-    );
-    const height = Math.max(
-        Math.hypot(topLeft.x - bottomLeft.x, topLeft.y - bottomLeft.y),
-        Math.hypot(topRight.x - bottomRight.x, topRight.y - bottomRight.y)
-    );
+    // const leftHeight = Math.abs(topLeft.y - bottomLeft.y);
+    // const rightHeight = Math.abs(topRight.y - bottomRight.y);
+    // const perspective = leftHeight > rightHeight ? 'left' : 'right';
 
-    const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        topLeft.x, topLeft.y,
-        topRight.x, topRight.y,
-        bottomRight.x, bottomRight.y,
-        bottomLeft.x, bottomLeft.y
-    ]);
-    const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        0, 0,
-        width - 1, 0,
-        width - 1, height - 1,
-        0, height - 1
-    ]);
+    // // Define destination points for perspective transform
+    // const width = Math.max(
+    //     Math.hypot(topRight.x - topLeft.x, topRight.y - topLeft.y),
+    //     Math.hypot(bottomRight.x - bottomLeft.x, bottomRight.y - bottomLeft.y)
+    // );
+    // const height = Math.max(
+    //     Math.hypot(topLeft.x - bottomLeft.x, topLeft.y - bottomLeft.y),
+    //     Math.hypot(topRight.x - bottomRight.x, topRight.y - bottomRight.y)
+    // );
 
-    // Apply perspective transform
-    const transform = cv.getPerspectiveTransform(srcPts, dstPts);
-    const dst = new cv.Mat();
-    cv.warpPerspective(src, dst, transform, new cv.Size(width, height));
+    // const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    //     topLeft.x, topLeft.y,
+    //     topRight.x, topRight.y,
+    //     bottomRight.x, bottomRight.y,
+    //     bottomLeft.x, bottomLeft.y
+    // ]);
+    // const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    //     0, 0,
+    //     width - 1, 0,
+    //     width - 1, height - 1,
+    //     0, height - 1
+    // ]);
 
-    // Display the result
-    // appendImage(dst);
+    // // Apply perspective transform
+    // const transform = cv.getPerspectiveTransform(srcPts, dstPts);
+    // const dst = new cv.Mat();
+    // cv.warpPerspective(src, dst, transform, new cv.Size(width, height));
+
+    // // Display the result
+    // // appendImage(dst);
 
 
-    // Clean up
-    srcPts.delete();
-    dstPts.delete();
-    transform.delete();
-    return { dst, perspective };
+    // // Clean up
+    // srcPts.delete();
+    // dstPts.delete();
+    // transform.delete();
+    // return { dst, perspective };
 }
 
 const calculateArcAngles = (ellipse: cv.RotatedRect) => {

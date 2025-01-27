@@ -1,7 +1,7 @@
 import cv from "@techstark/opencv-js";
 import { appendImage } from "../helper/appendImage";
 
-const removeSmallBlobs = (mask: cv.Mat, minArea: number) => {
+const fillInGaps = (mask: cv.Mat, minArea: number) => {
     // Find contours in the binary mask
     let contours = new cv.MatVector();
     let hierarchy = new cv.Mat();
@@ -28,7 +28,7 @@ const removeSmallBlobs = (mask: cv.Mat, minArea: number) => {
     return filteredMask;
   }
 
-function fillSmallHoles(mask: cv.Mat, kernelSize: number) {
+function removeWhiteBLobs(mask: cv.Mat, kernelSize: number) {
     // Create a structuring element (kernel)
     let kernel = cv.Mat.ones(kernelSize, kernelSize, cv.CV_8U);
 
@@ -49,12 +49,17 @@ export const monochrome = (src: cv.Mat) => {
     
     // Apply Gaussian Blur
     const blurred = new cv.Mat();
-    cv.GaussianBlur(src, blurred, new cv.Size(0, 0), 5);
+    cv.GaussianBlur(src, blurred, new cv.Size(0, 0), 20);
     appendImage(blurred);
+
+
+    const sharpened = new cv.Mat();
+    cv.addWeighted(src, 2, blurred, -1.8, 0, sharpened);
+    appendImage(sharpened, 'sharpen');
 
     // Convert the src to HSV color space
     let hsv = new cv.Mat();
-    cv.cvtColor(blurred, hsv, cv.COLOR_BGR2Luv);
+    cv.cvtColor(sharpened, hsv, cv.COLOR_BGR2Luv);
 
     // Define the range for light blue in HSV
     const lowerBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [70, 80, 100, 0]); // Lower bound
@@ -63,17 +68,18 @@ export const monochrome = (src: cv.Mat) => {
     // Create a mask for light blue
     let mask = new cv.Mat();
     cv.inRange(hsv, lowerBlue, upperBlue, mask);
-    appendImage(mask);
+    appendImage(mask, 'inRange');
 
-    const newMask = fillSmallHoles(mask, 40);
-    appendImage(newMask);
+    const newMask = removeWhiteBLobs(mask, 10);
+    appendImage(newMask, 'removeWhiteBLobs');
 
     const blur2 = new cv.Mat();
-    cv.GaussianBlur(newMask, blur2, new cv.Size(0, 0), 4);
+    cv.GaussianBlur(newMask, blur2, new cv.Size(0, 0), 10);
+    appendImage(blur2, 'GaussianBlur');
 
     let mask2 = new cv.Mat();
-    mask2 = removeSmallBlobs(blur2, 1000);
-    appendImage(mask2);
+    mask2 = fillInGaps(blur2, 1);
+    appendImage(mask2, 'fillInGaps');
 
     // Filter the light blue parts from the src
     let result = new cv.Mat();
