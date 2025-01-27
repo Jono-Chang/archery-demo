@@ -206,7 +206,7 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     appendImage(morphed, 'morphed');
 
     const lines = new cv.Mat();
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 10, 500, 20);
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 10, 300, 20);
 
     // Draw the detected lines on the original image
     const horizontalLines: Array<BasicLine> = [];
@@ -264,7 +264,7 @@ const fitToMiddleSquare = (src: cv.Mat) => {
         Math.round(furthertVertical.x), Math.round(furthertVertical.y),
     ];
     const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, srcPtsArr);
-    const radius = Math.min(imageWidth, imageHeight) / 2 * 0.9;
+    const radius = Math.min(imageWidth, imageHeight) / 2 * 0.7;
     // Define destination points for perspective transform
     const dstPtsArr = generateDestinationPointArray(srcPtsArr, midPoint, radius)
     const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, dstPtsArr);
