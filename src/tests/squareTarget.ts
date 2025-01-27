@@ -20,6 +20,110 @@ const calculatePerimeterAndArea = (contour: cv.Mat) => {
     return { perimeter, area };
 }
 
+const isCloseToHorizontalOrVertical = (x1: number, y1: number, x2: number, y2: number) => {
+    const dx = Math.abs(x2 - x1); // Difference in x
+    const dy = Math.abs(y2 - y1); // Difference in y
+
+    // Define a threshold to determine "closeness" (adjust as needed)
+    const threshold = 0.3;
+
+    if (dy === 0 || dx / dy < threshold) {
+        return "Close to horizontal";
+    } else if (dx === 0 || dy / dx < threshold) {
+        return "Close to vertical";
+    } else {
+        return "Neither close to horizontal nor vertical";
+    }
+}
+
+type BasicLine = { x1: number, y1: number, x2: number, y2: number };
+
+const calculateAverage = (lines: Array<BasicLine>) => {
+    let totalX1 = 0, totalY1 = 0, totalX2 = 0, totalY2 = 0;
+
+    // Sum all x1, y1, x2, y2 values
+    lines.forEach(line => {
+        totalX1 += line.x1;
+        totalY1 += line.y1;
+        totalX2 += line.x2;
+        totalY2 += line.y2;
+    });
+
+    // Calculate averages
+    const x1 = totalX1 / lines.length;
+    const y1 = totalY1 / lines.length;
+    const x2 = totalX2 / lines.length;
+    const y2 = totalY2 / lines.length;
+
+    return { x1, y1, x2, y2 };
+}
+
+const calculateClosestLine = (point: { x: number, y: number }, lines: Array<BasicLine>): BasicLine | null => {
+    const { x: x0, y: y0 } = point;
+
+    let closestLine: BasicLine | null = null;
+    let minDistance = Infinity;
+
+    lines.forEach(line => {
+        const { x1, y1, x2, y2 } = line;
+
+        // Calculate the perpendicular distance from the point to the line
+        const numerator = Math.abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1);
+        const denominator = Math.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2);
+        const distance = numerator / denominator;
+
+        // Update the closest line if this distance is smaller
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestLine = line;
+        }
+    });
+
+    return closestLine as BasicLine | null;
+}
+
+const findIntersection = (line1: BasicLine, line2: BasicLine) => {
+    // Line 1 coefficients
+    const A1 = line1.y2 - line1.y1;
+    const B1 = line1.x1 - line1.x2;
+    const C1 = line1.x2 * line1.y1 - line1.x1 * line1.y2;
+
+    // Line 2 coefficients
+    const A2 = line2.y2 - line2.y1;
+    const B2 = line2.x1 - line2.x2;
+    const C2 = line2.x2 * line2.y1 - line2.x1 * line2.y2;
+
+    // Calculate the determinant
+    const determinant = A1 * B2 - A2 * B1;
+
+    if (determinant === 0) {
+        // Lines are parallel (no intersection or infinitely many if coincident)
+        return null;
+    }
+
+    // Intersection point
+    const x = Math.abs((B2 * C1 - B1 * C2) / determinant);
+    const y = Math.abs((A1 * C2 - A2 * C1) / determinant);
+
+    return { x, y };
+}
+
+const findFarthestPoint = (A: { x: number, y: number }, B: BasicLine) => {
+    const { x, y } = A;
+    const { x1, y1, x2, y2 } = B;
+
+    // Calculate distances
+    const distanceToFirstPoint = Math.sqrt((x1 - x) ** 2 + (y1 - y) ** 2);
+    const distanceToSecondPoint = Math.sqrt((x2 - x) ** 2 + (y2 - y) ** 2);
+
+    // Compare distances
+    if (distanceToFirstPoint > distanceToSecondPoint) {
+        return { x: x1, y: y1, distance: distanceToFirstPoint };
+    } else {
+        return { x: x2, y: y2, distance: distanceToSecondPoint };
+    }
+}
+
 const numbersAreClose = (a: number, b: number, epsilon: number = 0.01) => {
     return Math.abs(a - b) < epsilon;
 }
@@ -47,6 +151,9 @@ const removeOutliers = (data: number[]) => {
   }
 
 const fitToMiddleSquare = (src: cv.Mat) => {
+    const { width: imageWidth, height: imageHeight } = src.size();
+    const midPoint = { x: imageWidth / 2, y: imageHeight / 2 };
+
     const gray = new cv.Mat();
     const blurred = new cv.Mat();
     const filtered = new cv.Mat();
@@ -87,81 +194,92 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 10, 400, 20);
 
     // Draw the detected lines on the original image
+    const horizontalLines: Array<BasicLine> = [];
+    const verticalLines: Array<BasicLine> = [];
+    const annotated = src.clone();
     for (let i = 0; i < lines.rows; i++) {
       const [x1, y1, x2, y2] = lines.data32S.slice(i * 4, (i + 1) * 4);
-      cv.line(src, new cv.Point(x1, y1), new cv.Point(x2, y2), [255, 0, 0, 255], 2); // Red lines
+      const closeTo = isCloseToHorizontalOrVertical(x1, y1, x2, y2);
+      if (closeTo === 'Close to horizontal') {
+        horizontalLines.push({ x1, y1, x2, y2 })
+        cv.line(annotated, new cv.Point(x1, y1), new cv.Point(x2, y2), [0, 255, 0, 255], 2)
+      } else if (closeTo === 'Close to vertical') {
+        verticalLines.push({ x1, y1, x2, y2 })
+        cv.line(annotated, new cv.Point(x1, y1), new cv.Point(x2, y2), [255, 0, 0, 255], 2)
+      } else {
+        cv.line(annotated, new cv.Point(x1, y1), new cv.Point(x2, y2), [255, 255, 255, 255], 2)
+      }
     }
 
-    appendImage(src, 'HoughLinesP');
+    const averageHorizontal = calculateClosestLine(midPoint, horizontalLines);
+    if (!averageHorizontal) return null;
+    cv.line(
+        annotated,
+        new cv.Point(averageHorizontal.x1, averageHorizontal.y1),
+        new cv.Point(averageHorizontal.x2, averageHorizontal.y2),
+        [0, 0, 0, 255],
+        2
+    )
 
-    // Find contours on the morphed image
-    cv.findContours(morphed, contours, hierarchy, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE);
+    const averageVertical = calculateClosestLine(midPoint, verticalLines);
+    if (!averageVertical) return null;
+    cv.line(
+        annotated,
+        new cv.Point(averageVertical.x1, averageVertical.y1),
+        new cv.Point(averageVertical.x2, averageVertical.y2),
+        [0, 0, 0, 255],
+        2
+    )
 
-    // Clone the original image for visualization
-    const visual = src.clone();
+    const intersection = findIntersection(averageHorizontal, averageVertical);
+    console.log('intersection', averageHorizontal, averageVertical, intersection)
+    if (!intersection) return null;
+    cv.circle(annotated, new cv.Point(intersection.x, intersection.y), 5, [255, 0, 255, 255]);
+    appendImage(annotated, 'annotated');
 
-    // Initialize variables
-    let largestQuad = null;
-    let largestArea = 0;
+    const furthertHorizontal = findFarthestPoint(intersection, averageHorizontal);
+    console.log('intersection', intersection)
+    console.log('averageHorizontal', averageHorizontal)
+    console.log('furthertHorizontal', furthertHorizontal)
+    const furthertVertical = findFarthestPoint(intersection, averageVertical);
+    console.log([
+        Math.round(intersection.x), Math.round(intersection.y),
+        Math.round(furthertHorizontal.x), Math.round(furthertHorizontal.y),
+        Math.round(furthertVertical.x), Math.round(furthertHorizontal.y),
+        Math.round(furthertVertical.x), Math.round(furthertVertical.y),
+    ])
+    const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+        Math.round(intersection.x), Math.round(intersection.y),
+        Math.round(furthertHorizontal.x), Math.round(furthertHorizontal.y),
+        Math.round(furthertVertical.x), Math.round(furthertHorizontal.y),
+        Math.round(furthertVertical.x), Math.round(furthertVertical.y),
+    ]);
+    const radius = Math.min(imageWidth, imageHeight) / 2 * 0.9;
+    // Define destination points for perspective transform
+    console.log([
+        midPoint.x - radius, midPoint.y + radius,
+        midPoint.x - radius, midPoint.y - radius,
+        midPoint.x + radius, midPoint.y - radius,
+        midPoint.x + radius, midPoint.y + radius,
+    ])
+    const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+        midPoint.x - radius, midPoint.y + radius,
+        midPoint.x - radius, midPoint.y - radius,
+        midPoint.x + radius, midPoint.y - radius,
+        midPoint.x + radius, midPoint.y + radius,
+    ]);
 
-    // Loop through all contours
-    for (let i = 0; i < contours.size(); i++) {
-        const contour = contours.get(i);
-        const approx = new cv.Mat();
+    // // Apply perspective transform
+    const transform = cv.getPerspectiveTransform(srcPts, dstPts);
+    const dst = src.clone();
+    cv.warpPerspective(src, dst, transform, src.size());
 
-        // Approximate the contour to simplify it
-        cv.approxPolyDP(contour, approx, 0.03 * cv.arcLength(contour, true), true);
-
-        // Check if the contour is a quadrilateral
-        if (true || approx.rows === 4) {
-            // Calculate the area of the quadrilateral
-            const { perimeter, area } = calculatePerimeterAndArea(contour)
-            const areaBasedOnPerimeter = Math.pow(perimeter / 4, 2);
-            const isRoughlySquare = numbersAreClose(areaBasedOnPerimeter, area, 100000)
-            const color = new cv.Scalar(
-                Math.round(Math.random() * 255),
-                Math.round(Math.random() * 255),
-                Math.round(Math.random() * 255),
-                255
-            );
-            cv.drawContours(visual, contours, i, color, 2, cv.LINE_AA);
-            // if (!isRoughlySquare) continue;
-
-            // const { width: imageWidth, height: imageHeight } = src.size();
-            // const centerX = imageWidth / 2;
-            // const centerY = imageHeight / 2;
-            // const isCenterInside = cv.pointPolygonTest(contour, { x: centerX, y: centerY }, false) >= 0;
-            // if (!isCenterInside) continue;
-
-            // Draw the quadrilateral on the visual canvas
-            const color2 = new cv.Scalar(
-                255,
-                255,
-                255,
-                255
-            );
-            cv.drawContours(visual, contours, i, color2, 2, cv.LINE_AA);
-
-            // Keep track of the largest quadrilateral (assume it's the target)
-            if (area > largestArea) {
-                const color = new cv.Scalar(255, 255, 255, 255); // Blue
-                cv.drawContours(visual, contours, i, color, 2, cv.LINE_AA);
-
-                largestArea = area;
-                largestQuad = approx.clone();
-            }
-        }
-        approx.delete();
-    }
-
-    // Visualize all detected quadrilaterals
-    // appendImage(gray);
-    // appendImage(blurred);
+    
     appendImage(edges);
     appendImage(morphed);
-    appendImage(visual);
+    appendImage(dst, 'transformed');
 
-    return { dst: visual, perspective: 'left' }
+    return { dst, perspective: averageHorizontal.y1 < averageHorizontal.y2 ? 'right' : 'left' }
 
     // // If a valid quadrilateral is found, isolate and warp it
     // if (!largestQuad) return;
@@ -389,7 +507,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 100, 60, 10);  // Parameters for short lines
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 100, 150, 10);  // Parameters for short lines
 
     // Draw outer circle
     const outerCircleRadius = src.size().width / 2 * REFERENCE_CIRCLE_SCALING * OUTER_CIRCLE_SCALING;
