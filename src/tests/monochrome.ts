@@ -57,20 +57,27 @@ export const monochrome = (src: cv.Mat) => {
     cv.cvtColor(blurred, hsv, cv.COLOR_BGR2Luv);
 
     // Define the range for light blue in HSV
-    const lowerBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [70, 100, 110, 0]); // Lower bound
-    const upperBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [200, 200, 180, 0]); // Upper bound
+    const lowerBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [70, 80, 100, 0]); // Lower bound
+    const upperBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [200, 200, 160, 0]); // Upper bound
 
     // Create a mask for light blue
     let mask = new cv.Mat();
     cv.inRange(hsv, lowerBlue, upperBlue, mask);
     appendImage(mask);
 
-    const newMask = fillSmallHoles(mask, 30);
+    const newMask = fillSmallHoles(mask, 40);
     appendImage(newMask);
+
+    const blur2 = new cv.Mat();
+    cv.GaussianBlur(newMask, blur2, new cv.Size(0, 0), 4);
+
+    let mask2 = new cv.Mat();
+    mask2 = removeSmallBlobs(blur2, 1000);
+    appendImage(mask2);
 
     // Filter the light blue parts from the src
     let result = new cv.Mat();
-    cv.bitwise_and(src, src, result, newMask);
+    cv.bitwise_and(src, src, result, mask2);
 
     appendImage(result);
 

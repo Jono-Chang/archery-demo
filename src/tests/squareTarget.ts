@@ -54,22 +54,20 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     const morphed = new cv.Mat();
     const contours = new cv.MatVector();
     const hierarchy = new cv.Mat();
-
     const mono = monochrome(src);
 
     // Convert to grayscale
     cv.cvtColor(mono, gray, cv.COLOR_RGBA2GRAY);
 
     // Apply Gaussian Blur
-    cv.GaussianBlur(gray, blurred, new cv.Size(0, 0), 30);
-
-    cv.threshold(blurred, filtered, 50, 255, cv.THRESH_BINARY);
+    cv.GaussianBlur(gray, blurred, new cv.Size(0, 0), 4);
 
     // Apply Canny edge detection
-    cv.Canny(filtered, edges, 10, 450);
+    
+    cv.Canny(blurred, edges, 30, 900, 5, true);
 
     // Apply Morphological Transformations to close gaps
-    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(10, 10));
+    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(20, 20));
     cv.morphologyEx(edges, morphed, cv.MORPH_CLOSE, kernel);
 
     // Find contours on the morphed image
@@ -91,7 +89,7 @@ const fitToMiddleSquare = (src: cv.Mat) => {
         cv.approxPolyDP(contour, approx, 0.03 * cv.arcLength(contour, true), true);
 
         // Check if the contour is a quadrilateral
-        if (approx.rows === 4) {
+        if (true || approx.rows === 4) {
             // Calculate the area of the quadrilateral
             const { perimeter, area } = calculatePerimeterAndArea(contour)
             const areaBasedOnPerimeter = Math.pow(perimeter / 4, 2);
@@ -103,13 +101,13 @@ const fitToMiddleSquare = (src: cv.Mat) => {
                 255
             );
             cv.drawContours(visual, contours, i, color, 2, cv.LINE_AA);
-            if (!isRoughlySquare) continue;
+            // if (!isRoughlySquare) continue;
 
-            const { width: imageWidth, height: imageHeight } = src.size();
-            const centerX = imageWidth / 2;
-            const centerY = imageHeight / 2;
-            const isCenterInside = cv.pointPolygonTest(contour, { x: centerX, y: centerY }, false) >= 0;
-            if (!isCenterInside) continue;
+            // const { width: imageWidth, height: imageHeight } = src.size();
+            // const centerX = imageWidth / 2;
+            // const centerY = imageHeight / 2;
+            // const isCenterInside = cv.pointPolygonTest(contour, { x: centerX, y: centerY }, false) >= 0;
+            // if (!isCenterInside) continue;
 
             // Draw the quadrilateral on the visual canvas
             const color2 = new cv.Scalar(
@@ -121,7 +119,7 @@ const fitToMiddleSquare = (src: cv.Mat) => {
             cv.drawContours(visual, contours, i, color2, 2, cv.LINE_AA);
 
             // Keep track of the largest quadrilateral (assume it's the target)
-            if (isCenterInside && isRoughlySquare && area > largestArea) {
+            if (area > largestArea) {
                 const color = new cv.Scalar(255, 255, 255, 255); // Blue
                 cv.drawContours(visual, contours, i, color, 2, cv.LINE_AA);
 
