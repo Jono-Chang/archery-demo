@@ -38,24 +38,43 @@ const isCloseToHorizontalOrVertical = (x1: number, y1: number, x2: number, y2: n
 
 type BasicLine = { x1: number, y1: number, x2: number, y2: number };
 
-const calculateAverage = (lines: Array<BasicLine>) => {
-    let totalX1 = 0, totalY1 = 0, totalX2 = 0, totalY2 = 0;
+const calculateAveragePoint = (points: { x: number, y: number }[]) => {
+    if (points.length === 0) {
+        throw new Error("The array of points is empty.");
+    }
 
-    // Sum all x1, y1, x2, y2 values
-    lines.forEach(line => {
-        totalX1 += line.x1;
-        totalY1 += line.y1;
-        totalX2 += line.x2;
-        totalY2 += line.y2;
+    let totalX = 0;
+    let totalY = 0;
+
+    // Sum up all x and y coordinates
+    points.forEach(point => {
+        totalX += point.x;
+        totalY += point.y;
     });
 
-    // Calculate averages
-    const x1 = totalX1 / lines.length;
-    const y1 = totalY1 / lines.length;
-    const x2 = totalX2 / lines.length;
-    const y2 = totalY2 / lines.length;
+    // Calculate the averages
+    const averageX = totalX / points.length;
+    const averageY = totalY / points.length;
 
-    return { x1, y1, x2, y2 };
+    return { x: averageX, y: averageY };
+}
+
+const generateDestinationPointArray = (srcPtsArr: number[], midPoint: { x: number, y: number }, radius: number) => {
+    const srcMidPt = calculateAveragePoint([
+        { x: srcPtsArr[0], y: srcPtsArr[1]},
+        { x: srcPtsArr[2], y: srcPtsArr[3]},
+        { x: srcPtsArr[4], y: srcPtsArr[5]},
+        { x: srcPtsArr[6], y: srcPtsArr[7]},
+    ])
+
+    const out: number[] = [];
+    for (let i = 0; i < srcPtsArr.length; i += 2) {
+        const x = srcPtsArr[i];
+        const y = srcPtsArr[i + 1];
+        out.push(x > srcMidPt.x ? midPoint.x + radius : midPoint.x - radius);
+        out.push(y > srcMidPt.y ? midPoint.y + radius : midPoint.y - radius);
+    }
+    return out;
 }
 
 const calculateClosestLine = (point: { x: number, y: number }, lines: Array<BasicLine>): BasicLine | null => {
@@ -124,10 +143,6 @@ const findFarthestPoint = (A: { x: number, y: number }, B: BasicLine) => {
     }
 }
 
-const numbersAreClose = (a: number, b: number, epsilon: number = 0.01) => {
-    return Math.abs(a - b) < epsilon;
-}
-
 const distanceBetweenPoints = (p1: cv.Point, p2: cv.Point) => {
     return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
 }
@@ -186,12 +201,12 @@ const fitToMiddleSquare = (src: cv.Mat) => {
 
     
     // Apply Morphological Transformations to close gaps
-    const kernel = cv.getStructuringElement(cv.MORPH_ERODE, new cv.Size(10, 10));
+    const kernel = cv.getStructuringElement(cv.MORPH_CROSS, new cv.Size(10, 10));
     cv.morphologyEx(edges, morphed, cv.MORPH_CROSS, kernel);
     appendImage(morphed, 'morphed');
 
     const lines = new cv.Mat();
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 10, 400, 20);
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 10, 500, 20);
 
     // Draw the detected lines on the original image
     const horizontalLines: Array<BasicLine> = [];
@@ -242,32 +257,17 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     console.log('averageHorizontal', averageHorizontal)
     console.log('furthertHorizontal', furthertHorizontal)
     const furthertVertical = findFarthestPoint(intersection, averageVertical);
-    console.log([
+    const srcPtsArr = [
         Math.round(intersection.x), Math.round(intersection.y),
         Math.round(furthertHorizontal.x), Math.round(furthertHorizontal.y),
         Math.round(furthertVertical.x), Math.round(furthertHorizontal.y),
         Math.round(furthertVertical.x), Math.round(furthertVertical.y),
-    ])
-    const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        Math.round(intersection.x), Math.round(intersection.y),
-        Math.round(furthertHorizontal.x), Math.round(furthertHorizontal.y),
-        Math.round(furthertVertical.x), Math.round(furthertHorizontal.y),
-        Math.round(furthertVertical.x), Math.round(furthertVertical.y),
-    ]);
+    ];
+    const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, srcPtsArr);
     const radius = Math.min(imageWidth, imageHeight) / 2 * 0.9;
     // Define destination points for perspective transform
-    console.log([
-        midPoint.x - radius, midPoint.y + radius,
-        midPoint.x - radius, midPoint.y - radius,
-        midPoint.x + radius, midPoint.y - radius,
-        midPoint.x + radius, midPoint.y + radius,
-    ])
-    const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        midPoint.x - radius, midPoint.y + radius,
-        midPoint.x - radius, midPoint.y - radius,
-        midPoint.x + radius, midPoint.y - radius,
-        midPoint.x + radius, midPoint.y + radius,
-    ]);
+    const dstPtsArr = generateDestinationPointArray(srcPtsArr, midPoint, radius)
+    const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, dstPtsArr);
 
     // // Apply perspective transform
     const transform = cv.getPerspectiveTransform(srcPts, dstPts);
@@ -278,64 +278,7 @@ const fitToMiddleSquare = (src: cv.Mat) => {
     appendImage(edges);
     appendImage(morphed);
     appendImage(dst, 'transformed');
-
-    return { dst, perspective: averageHorizontal.y1 < averageHorizontal.y2 ? 'right' : 'left' }
-
-    // // If a valid quadrilateral is found, isolate and warp it
-    // if (!largestQuad) return;
-
-    // const points = [];
-    // for (let i = 0; i < largestQuad.rows; i++) {
-    //     const point = largestQuad.data32S.slice(i * 2, i * 2 + 2);
-    //     points.push({ x: point[0], y: point[1] });
-    // }
-
-    // // Sort points (top-left, top-right, bottom-right, bottom-left)
-    // points.sort((a, b) => a.y - b.y);
-    // const [topLeft, topRight] = points.slice(0, 2).sort((a, b) => a.x - b.x);
-    // const [bottomLeft, bottomRight] = points.slice(2).sort((a, b) => a.x - b.x);
-
-    // const leftHeight = Math.abs(topLeft.y - bottomLeft.y);
-    // const rightHeight = Math.abs(topRight.y - bottomRight.y);
-    // const perspective = leftHeight > rightHeight ? 'left' : 'right';
-
-    // // Define destination points for perspective transform
-    // const width = Math.max(
-    //     Math.hypot(topRight.x - topLeft.x, topRight.y - topLeft.y),
-    //     Math.hypot(bottomRight.x - bottomLeft.x, bottomRight.y - bottomLeft.y)
-    // );
-    // const height = Math.max(
-    //     Math.hypot(topLeft.x - bottomLeft.x, topLeft.y - bottomLeft.y),
-    //     Math.hypot(topRight.x - bottomRight.x, topRight.y - bottomRight.y)
-    // );
-
-    // const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
-    //     topLeft.x, topLeft.y,
-    //     topRight.x, topRight.y,
-    //     bottomRight.x, bottomRight.y,
-    //     bottomLeft.x, bottomLeft.y
-    // ]);
-    // const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
-    //     0, 0,
-    //     width - 1, 0,
-    //     width - 1, height - 1,
-    //     0, height - 1
-    // ]);
-
-    // // Apply perspective transform
-    // const transform = cv.getPerspectiveTransform(srcPts, dstPts);
-    // const dst = new cv.Mat();
-    // cv.warpPerspective(src, dst, transform, new cv.Size(width, height));
-
-    // // Display the result
-    // // appendImage(dst);
-
-
-    // // Clean up
-    // srcPts.delete();
-    // dstPts.delete();
-    // transform.delete();
-    // return { dst, perspective };
+    return { dst, perspective: averageHorizontal.y1 > averageHorizontal.y2 ? 'right' : 'left' }
 }
 
 const calculateArcAngles = (ellipse: cv.RotatedRect) => {
@@ -494,20 +437,20 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
     const blurred = gray;
-    cv.GaussianBlur(blurred, gray, new cv.Size(0, 0), 1.1);
+    cv.GaussianBlur(blurred, gray, new cv.Size(0, 0), 2);
 
     // 4. Detect edges using Canny edge detector
     let edges = new cv.Mat();
-    cv.Canny(blurred, edges, 50, 100);
+    cv.Canny(blurred, edges, 10, 40);
     
     // Apply Morphological Transformations to close gaps
     let morphed = new cv.Mat();
-    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(4, 4));
-    cv.morphologyEx(edges, morphed, cv.MORPH_CLOSE, kernel);
+    const kernel = cv.getStructuringElement(cv.MORPH_CROSS, new cv.Size(7, 7));
+    cv.morphologyEx(edges, morphed, cv.MORPH_CROSS, kernel);
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 100, 150, 10);  // Parameters for short lines
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 300, 200, 10);  // Parameters for short lines
 
     // Draw outer circle
     const outerCircleRadius = src.size().width / 2 * REFERENCE_CIRCLE_SCALING * OUTER_CIRCLE_SCALING;

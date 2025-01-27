@@ -48,7 +48,7 @@ function App() {
       {
         <img
           id="testImage"
-          src={'/test/test2.jpg'}
+          src={'/test/test6.jpg'}
           alt="Image"
           style={{ display:'none' }}
           onLoad={(e) => {
