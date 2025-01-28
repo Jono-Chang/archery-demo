@@ -2,6 +2,44 @@
 import cv from "@techstark/opencv-js";
 import { appendImage } from "../helper/appendImage";
 
+const getBrighterInnerEllipse = (insideBlackCircleGray: cv.Mat, regneratedblackEllipseMask: cv.Mat, scalar = 1) => {
+    const insideBlackCircleAverageColor = cv.mean(insideBlackCircleGray, regneratedblackEllipseMask)[0];
+    const blackCircleBinary = new cv.Mat();
+    cv.threshold(insideBlackCircleGray, blackCircleBinary, insideBlackCircleAverageColor * scalar, 255, cv.THRESH_BINARY_INV);
+    appendImage(blackCircleBinary, 'blackCircleBinary')
+
+    const blackCircleBlurred = new cv.Mat();
+    cv.GaussianBlur(blackCircleBinary, blackCircleBlurred, new cv.Size(0, 0), 10);
+    appendImage(blackCircleBlurred, 'blackCircleBlurred');
+
+    const blackCircleBinary2 = new cv.Mat();
+    cv.threshold(blackCircleBlurred, blackCircleBinary2, 255/2, 255, cv.THRESH_BINARY_INV);
+    appendImage(blackCircleBinary2)
+
+    let contours2 = new cv.MatVector();
+    let hierarchy2 = new cv.Mat();
+    cv.findContours(blackCircleBinary2, contours2, hierarchy2, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    return cv.fitEllipse(contours2.get(0));
+}
+
+const generateMaskForEllipse = (blackEllipse: cv.RotatedRect, src: cv.Mat) => {
+    let blackEllipseMask = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
+
+    // Draw the ellipse on the mask (white color)
+    cv.ellipse(
+        blackEllipseMask, // Input/output image
+        blackEllipse.center, // Center coordinates
+        new cv.Size(blackEllipse.size.width / 2, blackEllipse.size.height / 2), // Radii of the ellipse
+        blackEllipse.angle, // Rotation angle 
+        blackEllipse.angle - 180, // Starting angle (0 degrees)
+        blackEllipse.angle + 180, // Ending angle (360 degrees)
+        new cv.Scalar(255, 255, 255, 255),
+        -1 // Fill the ellipse
+    );
+
+    return blackEllipseMask;
+}
+
 const getAverageEllipse = (ellipse1: cv.RotatedRect, ellipse2: cv.RotatedRect) => {
     let avgCenterX = (ellipse1.center.x + ellipse2.center.x) / 2;
     let avgCenterY = (ellipse1.center.y + ellipse2.center.y) / 2;
@@ -11,7 +49,7 @@ const getAverageEllipse = (ellipse1: cv.RotatedRect, ellipse2: cv.RotatedRect) =
     let avgHeight = (ellipse1.size.height + ellipse2.size.height) / 2;
 
     // Calculate the average angle
-    let avgAngle = (ellipse1.angle + ellipse2.angle) / 2;
+    let avgAngle = ellipse2.angle;//(ellipse1.angle + ellipse2.angle) / 2;
 
     // Create the average ellipse as a new RotatedRect
     let avgEllipse = new cv.RotatedRect();
@@ -150,93 +188,59 @@ export const blackCircle = (src: cv.Mat) => {
 
     let ellipseVisualisation = src.clone();
     
-    const fittedEllipse = cv.fitEllipse(contours.get(closestContourIndex));
+    const blackEllipse = cv.fitEllipse(contours.get(closestContourIndex));
     cv.ellipse(
         ellipseVisualisation, // Input/output image
-        fittedEllipse.center, // Center coordinates
-        new cv.Size(fittedEllipse.size.width / 2, fittedEllipse.size.height / 2), // Radii of the ellipse
-        fittedEllipse.angle, // Rotation angle 
-        fittedEllipse.angle - 180, // Starting angle (0 degrees)
-        fittedEllipse.angle + 180, // Ending angle (360 degrees)
+        blackEllipse.center, // Center coordinates
+        new cv.Size(blackEllipse.size.width / 2, blackEllipse.size.height / 2), // Radii of the ellipse
+        blackEllipse.angle, // Rotation angle 
+        blackEllipse.angle - 180, // Starting angle (0 degrees)
+        blackEllipse.angle + 180, // Ending angle (360 degrees)
         new cv.Scalar(0, 0, 255), // Color of the ellipse (red)
         2, // Thickness of the ellipse outline
         cv.LINE_AA // Line type (anti-aliased)
     );
-    cv.circle(ellipseVisualisation, new cv.Point(fittedEllipse.center.x, fittedEllipse.center.y), 5, new cv.Scalar(0, 0, 255, 255), -1);
+    cv.circle(ellipseVisualisation, new cv.Point(blackEllipse.center.x, blackEllipse.center.y), 5, new cv.Scalar(0, 0, 255, 255), -1);
     
     appendImage(ellipseVisualisation)
 
-    let regneratedBlackCircleMask = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
-
-    // Draw the ellipse on the mask (white color)
-    cv.ellipse(
-        regneratedBlackCircleMask, // Input/output image
-        fittedEllipse.center, // Center coordinates
-        new cv.Size(fittedEllipse.size.width / 2, fittedEllipse.size.height / 2), // Radii of the ellipse
-        fittedEllipse.angle, // Rotation angle 
-        fittedEllipse.angle - 180, // Starting angle (0 degrees)
-        fittedEllipse.angle + 180, // Ending angle (360 degrees)
-        new cv.Scalar(255, 255, 255, 255),
-        -1 // Fill the ellipse
-    );
+    let blackEllipseMask = generateMaskForEllipse(blackEllipse, src);
 
     let insideBlackCircleImage = new cv.Mat();
-    cv.bitwise_and(src, src, insideBlackCircleImage, regneratedBlackCircleMask);
+    cv.bitwise_and(src, src, insideBlackCircleImage, blackEllipseMask);
     appendImage(insideBlackCircleImage)
 
     const insideBlackCircleGray = new cv.Mat();
     cv.cvtColor(insideBlackCircleImage, insideBlackCircleGray, cv.COLOR_RGBA2GRAY, 0);
     appendImage(insideBlackCircleGray)
 
-    const insideBlackCircleAverageColor = cv.mean(insideBlackCircleGray, regneratedBlackCircleMask)[0];
+    const blueEllipse = getBrighterInnerEllipse(insideBlackCircleGray, blackEllipseMask, 1);
+    drawEllipse(blueEllipse, ellipseVisualisation)
 
-    const blackCircleBinary = new cv.Mat();
-    cv.threshold(insideBlackCircleGray, blackCircleBinary, insideBlackCircleAverageColor, 255, cv.THRESH_BINARY_INV);
-    appendImage(blackCircleBinary)
+    let blueEllipseMask = generateMaskForEllipse(blueEllipse, src);
 
-    const blackCircleBlurred = new cv.Mat();
-    cv.GaussianBlur(blackCircleBinary, blackCircleBlurred, new cv.Size(0, 0), 20);
-    appendImage(blackCircleBlurred, 'blurred');
+    const yellowEllipse = getBrighterInnerEllipse(insideBlackCircleGray, blueEllipseMask, 1.7);
+    drawEllipse(yellowEllipse, ellipseVisualisation)
 
-    const blackCircleBinary2 = new cv.Mat();
-    cv.threshold(blackCircleBlurred, blackCircleBinary2, 255/2, 255, cv.THRESH_BINARY_INV);
-    appendImage(blackCircleBinary2)
+    const black2Ellipse = getAverageEllipse(blueEllipse, blackEllipse);
+    drawEllipse(black2Ellipse, ellipseVisualisation)
+    
+    const whiteEllipses = getNextEllipseRecursive(blackEllipse, black2Ellipse, 'out', 2)
+    for (let i = 0; i < whiteEllipses.length; i++) drawEllipse(whiteEllipses[i], ellipseVisualisation)
+    
+    const blueRedEllipses = getNextEllipseRecursive(black2Ellipse, blueEllipse, 'in', 2)
+    for (let i = 0; i < blueRedEllipses.length; i++) drawEllipse(blueRedEllipses[i], ellipseVisualisation)
 
-    let contours2 = new cv.MatVector();
-    let hierarchy2 = new cv.Mat();
-    cv.findContours(blackCircleBinary2, contours2, hierarchy2, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-    const fittedEllipse2 = cv.fitEllipse(contours2.get(0));
-    cv.ellipse(
-        ellipseVisualisation, // Input/output image
-        fittedEllipse2.center, // Center coordinates
-        new cv.Size(fittedEllipse2.size.width / 2, fittedEllipse2.size.height / 2), // Radii of the ellipse
-        fittedEllipse2.angle, // Rotation angle 
-        fittedEllipse2.angle - 180, // Starting angle (0 degrees)
-        fittedEllipse2.angle + 180, // Ending angle (360 degrees)
-        new cv.Scalar(0, 0, 255), // Color of the ellipse (red)
-        2, // Thickness of the ellipse outline
-        cv.LINE_AA // Line type (anti-aliased)
-    );
-    cv.circle(ellipseVisualisation, new cv.Point(fittedEllipse2.center.x, fittedEllipse2.center.y), 5, new cv.Scalar(0, 0, 255, 255), -1);
+    const red2Ellipse = getAverageEllipse(blueRedEllipses[1], yellowEllipse);
+    drawEllipse(red2Ellipse, ellipseVisualisation)
 
-    const avgEllipse = getAverageEllipse(fittedEllipse, fittedEllipse2);
-    drawEllipse(avgEllipse, ellipseVisualisation)
-    // Outer
-    const ellipsesOuter = getNextEllipseRecursive(avgEllipse, fittedEllipse2, 'out', 3)
-    console.log('ellipsesOuter', ellipsesOuter)
-    // ellipses.forEach(e => drawEllipse(e, ellipseVisualisation))
-    for (let i = 0; i < ellipsesOuter.length; i++) {
-        const e = ellipsesOuter[i]
-        drawEllipse(e, ellipseVisualisation)
-    }
-
-    // Inner
-    const ellipsesInner = getNextEllipseRecursive(avgEllipse, fittedEllipse2, 'in', 3)
-    console.log('ellipsesInner', ellipsesInner)
-    // ellipses.forEach(e => drawEllipse(e, ellipseVisualisation))
-    for (let i = 0; i < ellipsesInner.length; i++) {
-        const e = ellipsesInner[i]
-        drawEllipse(e, ellipseVisualisation)
-    }
+    // // Inner
+    // const ellipsesInner = getNextEllipseRecursive(avgEllipse, yellowEllipse, 'in', 3)
+    // console.log('ellipsesInner', ellipsesInner)
+    // // ellipses.forEach(e => drawEllipse(e, ellipseVisualisation))
+    // for (let i = 0; i < ellipsesInner.length; i++) {
+    //     const e = ellipsesInner[i]
+    //     drawEllipse(e, ellipseVisualisation)
+    // }
     appendImage(ellipseVisualisation)
 }
