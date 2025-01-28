@@ -2,6 +2,11 @@
 import cv from "@techstark/opencv-js";
 import { appendImage } from "../helper/appendImage";
 
+const REFERENCE_CIRCLE_SCALING = 0.7;
+const OUTER_CIRCLE_SCALING = 1.29;
+
+const ARROW_MIN_DISTANCE = 10;
+
 const getBrighterInnerEllipse = (insideBlackCircleGray: cv.Mat, regneratedblackEllipseMask: cv.Mat, scalar = 1, invert = true) => {
     const insideBlackCircleAverageColor = cv.mean(insideBlackCircleGray, regneratedblackEllipseMask)[0];
     const blackCircleBinary = new cv.Mat();
@@ -180,7 +185,7 @@ const drawEllipse = (ellipse: cv.RotatedRect, src: cv.Mat) => {
     cv.circle(src, new cv.Point(ellipse.center.x, ellipse.center.y), 5, new cv.Scalar(0, 0, 255, 255), -1);
 }
 
-export const blackCircle = (src: cv.Mat) => {
+export const getEllipses = (src: cv.Mat) => {
     const { width, height } = src.size();
     const smallerSide = Math.min(width, height);
     // appendImage(src);
@@ -294,19 +299,186 @@ export const blackCircle = (src: cv.Mat) => {
 
     const yellow2Ellipses = getNextEllipseRecursive(red2Ellipse, yellowEllipse, 'in', 1)
     drawEllipse(yellow2Ellipses[0], ellipseVisualisation)
-    // const blueRedEllipses = getNextEllipseRecursive(black2Ellipse, blueEllipse, 'in', 2)
-    // for (let i = 0; i < blueRedEllipses.length; i++) drawEllipse(blueRedEllipses[i], ellipseVisualisation)
 
-    // const red2Ellipse = getAverageEllipse(blueRedEllipses[1], yellowEllipse);
-    // drawEllipse(red2Ellipse, ellipseVisualisation)
-
-    // // Inner
-    // const ellipsesInner = getNextEllipseRecursive(avgEllipse, yellowEllipse, 'in', 3)
-    // console.log('ellipsesInner', ellipsesInner)
-    // // ellipses.forEach(e => drawEllipse(e, ellipseVisualisation))
-    // for (let i = 0; i < ellipsesInner.length; i++) {
-    //     const e = ellipsesInner[i]
-    //     drawEllipse(e, ellipseVisualisation)
-    // }
     appendImage(ellipseVisualisation)
+
+    const ellipses = [
+        whiteEllipses[1],
+        whiteEllipses[0],
+        blackEllipse,
+        black2Ellipse,
+        blueEllipse,
+        blue2Ellipse,
+        redEllipse,
+        red2Ellipse,
+        yellowEllipse,
+        yellow2Ellipses[0],
+    ]
+
+    return { ellipses, ellipseVisualisation};
+}
+
+const distanceBetweenPoints = (p1: cv.Point, p2: cv.Point) => {
+    return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+}
+const removeOutliers = (data: number[]) => {
+    // Sort the array
+    const sorted = [...data].sort((a, b) => a - b);
+    
+    // Find the first quartile (Q1) and third quartile (Q3)
+    const q1 = sorted[Math.floor((sorted.length / 4))];
+    const q3 = sorted[Math.ceil((sorted.length * 3) / 4 - 1)];
+    
+    // Calculate the interquartile range (IQR)
+    const iqr = q3 - q1;
+    
+    // Define the bounds for outliers
+    const lowerBound = q1 - 1.5 * iqr;
+    const upperBound = q3 + 1.5 * iqr;
+    
+    // Filter the data to exclude outliers
+    return data.filter(value => value >= lowerBound && value <= upperBound);
+  }
+
+
+
+const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
+    const clone = src.clone();
+
+    // 2. Convert to grayscale
+    let gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    const blurred = gray;
+    cv.GaussianBlur(blurred, gray, new cv.Size(0, 0), 2);
+
+    // 4. Detect edges using Canny edge detector
+    let edges = new cv.Mat();
+    cv.Canny(blurred, edges, 10, 40);
+    
+    // Apply Morphological Transformations to close gaps
+    let morphed = new cv.Mat();
+    const kernel = cv.getStructuringElement(cv.MORPH_CROSS, new cv.Size(7, 7));
+    cv.morphologyEx(edges, morphed, cv.MORPH_CROSS, kernel);
+
+    // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
+    let lines = new cv.Mat();
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 300, 200, 10);  // Parameters for short lines
+
+    // Draw outer circle
+    const outerCircleRadius = src.size().width / 2 * REFERENCE_CIRCLE_SCALING * OUTER_CIRCLE_SCALING;
+    const { width: imageWidth, height: imageHeight } = src.size();
+    const centerX = imageWidth / 2;
+    const centerY = imageHeight / 2;
+    const centerPoint = new cv.Point(centerX, centerY);
+    cv.circle(clone, centerPoint, outerCircleRadius, new cv.Scalar(255, 255, 255, 255), 2, cv.LINE_AA);
+
+    const lineStore: Array<[cv.Point, cv.Point]> = [];
+    // 6. Draw the detected lines on the original image
+    for (let i = 0; i < lines.rows; i++) {
+        let x1 = lines.data32S[i * 4];
+        let y1 = lines.data32S[i * 4 + 1];
+        let x2 = lines.data32S[i * 4 + 2];
+        let y2 = lines.data32S[i * 4 + 3];
+
+        const targetPoint = perspective === 'left' ? new cv.Point(x1, y1) : new cv.Point(x2, y2);
+        const tailPoint = perspective === 'left' ? new cv.Point(x2, y2) : new cv.Point(x1, y1);
+
+        if (lineStore.some(
+            ([p1, p2]) => distanceBetweenPoints(targetPoint, p1) < ARROW_MIN_DISTANCE
+              || distanceBetweenPoints(tailPoint, p2) < ARROW_MIN_DISTANCE
+        )) {
+            continue;
+        }
+        
+        const distanceFromCenter = distanceBetweenPoints(targetPoint, new cv.Point(centerX, centerY));
+        if (distanceFromCenter > outerCircleRadius) continue;
+        lineStore.push([targetPoint, tailPoint]);
+    }
+
+    // Remove length outliers
+    const lengths = lineStore.map(([p1, p2]) => distanceBetweenPoints(p1, p2));
+    const nonOutlierLengths = removeOutliers(lengths);
+    const filteredLineStore = lineStore//.filter((_, i) => nonOutlierLengths.includes(lengths[i]));
+
+    // Draw the detected lines on the original image
+    for (let i = 0; i < filteredLineStore.length; i++) {
+        const [targetPoint, tailPoint] = filteredLineStore[i];
+        cv.line(clone, targetPoint, tailPoint, new cv.Scalar(255, 255, 255), 1, cv.LINE_AA);
+        cv.circle(clone, targetPoint, 1, new cv.Scalar(0, 255, 0), -1);
+    }
+
+    // 7. Show the result
+    appendImage(src);
+    appendImage(gray);
+    appendImage(edges);
+    appendImage(morphed);
+    appendImage(clone);
+
+    // 8. Cleanup
+    gray.delete();
+    // blurred.delete();
+    edges.delete();
+    lines.delete();
+
+    return {
+        dst: clone,
+        points: filteredLineStore.map(([p1, p2]) => (p1)),
+        centerPoint
+    };
+}
+
+const isPointInsideEllipse = (point: cv.Point, ellipse: cv.RotatedRect) => {
+    // Extract ellipse parameters
+    let center = ellipse.center;
+    let size = ellipse.size;
+    let angle = ellipse.angle;
+
+    // Convert the angle from degrees to radians
+    let angleRad = Math.PI * angle / 180;
+
+    // Translate the point to the ellipse's coordinate system
+    let dx = point.x - center.x;
+    let dy = point.y - center.y;
+
+    // Rotate the point by the negative of the ellipse's angle
+    let rotatedX = dx * Math.cos(-angleRad) - dy * Math.sin(-angleRad);
+    let rotatedY = dx * Math.sin(-angleRad) + dy * Math.cos(-angleRad);
+
+    // Check if the point lies inside the ellipse equation
+    let a = size.width / 2;  // Semi-major axis
+    let b = size.height / 2; // Semi-minor axis
+    let inside = (rotatedX * rotatedX) / (a * a) + (rotatedY * rotatedY) / (b * b) <= 1;
+
+    return inside;
+}
+
+const processPointsAgainstEllipses = (points: cv.Point[], ellipses: cv.RotatedRect[]) => {
+    let result = [];
+    
+    // Iterate over the ellipses in reverse order (to prioritize the last ellipses)
+    for (let j = 0; j < points.length; j++) {
+        for (let i = ellipses.length - 1; i >= 0; i--) {
+            let ellipse = ellipses[i];
+            let point = points[j];
+            if (isPointInsideEllipse(point, ellipse)) {
+                result.push({ point, ellipseIndex: i});
+                break;
+            }
+        }
+    }
+    
+    return result;
+}
+
+export const blackCircle = (src: cv.Mat) => {
+    const { ellipses, ellipseVisualisation } = getEllipses(src);
+    const { dst: dst3, points, centerPoint } = arrowDetection(src, 'left' as any) || {};
+    const results = processPointsAgainstEllipses(points, ellipses);
+    console.log('results', results)
+    const clone = src.clone();
+    for (let i = 0; i < results.length; i++) {
+        cv.putText(clone, `${results[i].ellipseIndex + 1}`, results[i].point, cv.FONT_HERSHEY_SIMPLEX, 0.5, new cv.Scalar(255, 255, 255), 1);
+    }
+    appendImage(clone);
 }
