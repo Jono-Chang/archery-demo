@@ -476,7 +476,12 @@ const processPointsAgainstEllipses = (points: cv.Point[], ellipses: cv.RotatedRe
 
 export const blackCircle = (src: cv.Mat) => {
     const { ellipses, ellipseVisualisation, perspective } = getEllipses(src);
-    const { dst: dst3, points, centerPoint } = arrowDetection(src, perspective as any) || {};
+    const biggestEllipse = ellipses[0];
+    
+    let biggestEllipseMask = generateMaskForEllipse(biggestEllipse, src);
+    let insideBiggestEllipse = new cv.Mat();
+    cv.bitwise_and(src, src, insideBiggestEllipse, biggestEllipseMask);
+    const { dst: dst3, points, centerPoint } = arrowDetection(insideBiggestEllipse, perspective as any) || {};
     const results = processPointsAgainstEllipses(points, ellipses);
     console.log('results', results)
     const clone = src.clone();
