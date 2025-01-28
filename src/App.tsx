@@ -6,6 +6,8 @@ import { crop } from './tests/crop';
 import { pointRings } from './tests/pointRings';
 import { squareTarget } from './tests/squareTarget';
 import { monochrome } from './tests/monochrome';
+import { saturation } from './tests/saturation';
+import { blackCircle } from './tests/blackCircle';
 
 function App() {
 
@@ -28,7 +30,8 @@ function App() {
     canvasContainer!.innerHTML = '';
     // crop(img);
     // pointRings(img);
-    squareTarget(img);
+    // squareTarget(img);
+    blackCircle(img);
   };
 
   const submitImage = async (event: any) => {
