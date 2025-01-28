@@ -315,7 +315,10 @@ export const getEllipses = (src: cv.Mat) => {
         yellow2Ellipses[0],
     ]
 
-    return { ellipses, ellipseVisualisation};
+    const leftDrift = ellipses[0].center.x > ellipses[ellipses.length -1].center.x;
+    const perspective = leftDrift ? 'right' : 'left';
+
+    return { ellipses, ellipseVisualisation, perspective };
 }
 
 const distanceBetweenPoints = (p1: cv.Point, p2: cv.Point) => {
@@ -472,8 +475,8 @@ const processPointsAgainstEllipses = (points: cv.Point[], ellipses: cv.RotatedRe
 }
 
 export const blackCircle = (src: cv.Mat) => {
-    const { ellipses, ellipseVisualisation } = getEllipses(src);
-    const { dst: dst3, points, centerPoint } = arrowDetection(src, 'left' as any) || {};
+    const { ellipses, ellipseVisualisation, perspective } = getEllipses(src);
+    const { dst: dst3, points, centerPoint } = arrowDetection(src, perspective as any) || {};
     const results = processPointsAgainstEllipses(points, ellipses);
     console.log('results', results)
     const clone = src.clone();
