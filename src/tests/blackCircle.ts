@@ -49,7 +49,24 @@ const getAverageEllipse = (ellipse1: cv.RotatedRect, ellipse2: cv.RotatedRect) =
     let avgHeight = (ellipse1.size.height + ellipse2.size.height) / 2;
 
     // Calculate the average angle
-    let avgAngle = ellipse2.angle;//(ellipse1.angle + ellipse2.angle) / 2;
+    let angle1 = ellipse1.angle;
+    let angle2 = ellipse2.angle;
+
+    // Handle angle wrapping (if angles differ by more than 180°)
+    if (Math.abs(angle1 - angle2) > 180) {
+        if (angle1 > angle2) {
+            angle2 += 360;
+        } else {
+            angle1 += 360;
+        }
+    }
+
+    // Compute the average angle
+    let avgAngle = (angle1 + angle2) / 2;
+
+    // Normalize the angle back to the range [0, 360)
+    avgAngle = avgAngle % 360;
+    if (avgAngle < 0) avgAngle += 360;
 
     // Create the average ellipse as a new RotatedRect
     let avgEllipse = new cv.RotatedRect();
@@ -219,7 +236,7 @@ export const blackCircle = (src: cv.Mat) => {
 
     let blueEllipseMask = generateMaskForEllipse(blueEllipse, src);
 
-    const yellowEllipse = getBrighterInnerEllipse(insideBlackCircleGray, blueEllipseMask, 1.7);
+    const yellowEllipse = getBrighterInnerEllipse(insideBlackCircleGray, blueEllipseMask, 1.5);
     drawEllipse(yellowEllipse, ellipseVisualisation)
 
     const black2Ellipse = getAverageEllipse(blueEllipse, blackEllipse);
