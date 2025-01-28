@@ -393,7 +393,7 @@ const fitToMiddleCircle = (src: cv.Mat) => {
         ellipseCenterX - ellipseRadiusX, ellipseCenterY,  // left
         ellipseCenterX + ellipseRadiusX, ellipseCenterY,  // right
         ellipseCenterX, ellipseCenterY - ellipseRadiusY,  // top
-        centerX, ellipseCenterY + ellipseRadiusY   // bottom
+        ellipseCenterX, ellipseCenterY + ellipseRadiusY   // bottom
     ]);
 
     const radius = src.size().width / 2 * REFERENCE_CIRCLE_SCALING;
