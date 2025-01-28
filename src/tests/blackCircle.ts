@@ -2,10 +2,10 @@
 import cv from "@techstark/opencv-js";
 import { appendImage } from "../helper/appendImage";
 
-const getBrighterInnerEllipse = (insideBlackCircleGray: cv.Mat, regneratedblackEllipseMask: cv.Mat, scalar = 1) => {
+const getBrighterInnerEllipse = (insideBlackCircleGray: cv.Mat, regneratedblackEllipseMask: cv.Mat, scalar = 1, invert = true) => {
     const insideBlackCircleAverageColor = cv.mean(insideBlackCircleGray, regneratedblackEllipseMask)[0];
     const blackCircleBinary = new cv.Mat();
-    cv.threshold(insideBlackCircleGray, blackCircleBinary, insideBlackCircleAverageColor * scalar, 255, cv.THRESH_BINARY_INV);
+    cv.threshold(insideBlackCircleGray, blackCircleBinary, insideBlackCircleAverageColor * scalar, 255, invert ? cv.THRESH_BINARY_INV : cv.THRESH_BINARY);
     appendImage(blackCircleBinary, 'blackCircleBinary')
 
     const blackCircleBlurred = new cv.Mat();
@@ -40,6 +40,42 @@ const generateMaskForEllipse = (blackEllipse: cv.RotatedRect, src: cv.Mat) => {
     return blackEllipseMask;
 }
 
+const extractRed = (insideBlackCircleImage: cv.Mat) => {
+
+    let rgbaChannels = new cv.MatVector();
+    cv.split(insideBlackCircleImage, rgbaChannels);
+
+    // Extract the red channel (index 2 in OpenCV)
+    let redChannel = rgbaChannels.get(2);
+    let hsv = new cv.Mat();
+    cv.cvtColor(insideBlackCircleImage, hsv, cv.COLOR_RGB2HSV);
+    
+    // Define lower and upper bounds for red in HSV
+    // Red has two ranges: 0-10 and 170-180 in Hue
+    let lowerRed1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 50, 50, 0]);   // Adjust Saturation and Value as needed
+    let upperRed1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [10, 255, 255, 0]);
+    let lowerRed2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [170, 50, 50, 0]);
+    let upperRed2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 255, 255, 0]);
+    
+    // Create masks for the two red ranges
+    let mask1 = new cv.Mat();
+    let mask2 = new cv.Mat();
+    cv.inRange(hsv, lowerRed1, upperRed1, mask1);
+    cv.inRange(hsv, lowerRed2, upperRed2, mask2);
+    
+    // Combine the two masks
+    let redMask = new cv.Mat();
+    cv.add(mask1, mask2, redMask);
+    
+    // Apply the mask to the original image
+    let masked = new cv.Mat();
+    cv.bitwise_and(insideBlackCircleImage, insideBlackCircleImage, masked, redMask);
+    
+    let result = new cv.Mat();
+    cv.cvtColor(masked, result, cv.COLOR_RGBA2GRAY, 0);
+    return result;
+}
+
 const getAverageEllipse = (ellipse1: cv.RotatedRect, ellipse2: cv.RotatedRect) => {
     let avgCenterX = (ellipse1.center.x + ellipse2.center.x) / 2;
     let avgCenterY = (ellipse1.center.y + ellipse2.center.y) / 2;
@@ -63,6 +99,7 @@ const getAverageEllipse = (ellipse1: cv.RotatedRect, ellipse2: cv.RotatedRect) =
 
     // Compute the average angle
     let avgAngle = (angle1 + angle2) / 2;
+    avgAngle = angle1; // TODO HACK. THIS GIVES BETTER RESULTS.
 
     // Normalize the angle back to the range [0, 360)
     avgAngle = avgAngle % 360;
@@ -234,7 +271,11 @@ export const blackCircle = (src: cv.Mat) => {
     const blueEllipse = getBrighterInnerEllipse(insideBlackCircleGray, blackEllipseMask, 1);
     drawEllipse(blueEllipse, ellipseVisualisation)
 
-    let blueEllipseMask = generateMaskForEllipse(blueEllipse, src);
+    const blueEllipseMask = generateMaskForEllipse(blueEllipse, src);
+
+    const redFilter = extractRed(insideBlackCircleImage);
+    const redEllipse = getBrighterInnerEllipse(redFilter, blueEllipseMask, .5, true);
+    drawEllipse(redEllipse, ellipseVisualisation)
 
     const yellowEllipse = getBrighterInnerEllipse(insideBlackCircleGray, blueEllipseMask, 1.5);
     drawEllipse(yellowEllipse, ellipseVisualisation)
@@ -245,11 +286,19 @@ export const blackCircle = (src: cv.Mat) => {
     const whiteEllipses = getNextEllipseRecursive(blackEllipse, black2Ellipse, 'out', 2)
     for (let i = 0; i < whiteEllipses.length; i++) drawEllipse(whiteEllipses[i], ellipseVisualisation)
     
-    const blueRedEllipses = getNextEllipseRecursive(black2Ellipse, blueEllipse, 'in', 2)
-    for (let i = 0; i < blueRedEllipses.length; i++) drawEllipse(blueRedEllipses[i], ellipseVisualisation)
+    const blue2Ellipse = getAverageEllipse(blueEllipse, redEllipse);
+    drawEllipse(blue2Ellipse, ellipseVisualisation)
 
-    const red2Ellipse = getAverageEllipse(blueRedEllipses[1], yellowEllipse);
+    const red2Ellipse = getAverageEllipse(redEllipse, yellowEllipse);
     drawEllipse(red2Ellipse, ellipseVisualisation)
+
+    const yellow2Ellipses = getNextEllipseRecursive(red2Ellipse, yellowEllipse, 'in', 1)
+    drawEllipse(yellow2Ellipses[0], ellipseVisualisation)
+    // const blueRedEllipses = getNextEllipseRecursive(black2Ellipse, blueEllipse, 'in', 2)
+    // for (let i = 0; i < blueRedEllipses.length; i++) drawEllipse(blueRedEllipses[i], ellipseVisualisation)
+
+    // const red2Ellipse = getAverageEllipse(blueRedEllipses[1], yellowEllipse);
+    // drawEllipse(red2Ellipse, ellipseVisualisation)
 
     // // Inner
     // const ellipsesInner = getNextEllipseRecursive(avgEllipse, yellowEllipse, 'in', 3)
