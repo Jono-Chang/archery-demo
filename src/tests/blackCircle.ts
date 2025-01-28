@@ -2,6 +2,92 @@
 import cv from "@techstark/opencv-js";
 import { appendImage } from "../helper/appendImage";
 
+const getAverageEllipse = (ellipse1: cv.RotatedRect, ellipse2: cv.RotatedRect) => {
+    let avgCenterX = (ellipse1.center.x + ellipse2.center.x) / 2;
+    let avgCenterY = (ellipse1.center.y + ellipse2.center.y) / 2;
+
+    // Calculate the average size
+    let avgWidth = (ellipse1.size.width + ellipse2.size.width) / 2;
+    let avgHeight = (ellipse1.size.height + ellipse2.size.height) / 2;
+
+    // Calculate the average angle
+    let avgAngle = (ellipse1.angle + ellipse2.angle) / 2;
+
+    // Create the average ellipse as a new RotatedRect
+    let avgEllipse = new cv.RotatedRect();
+    avgEllipse.center = new cv.Point(avgCenterX, avgCenterY);
+    avgEllipse.size = new cv.Size(avgWidth, avgHeight);
+    avgEllipse.angle = avgAngle;
+
+    return avgEllipse;
+}
+
+const getNextEllipse = (ellipseOuter: cv.RotatedRect, ellipseInner: cv.RotatedRect, direction: 'out' | 'in') => {
+    let diffCenterX = ellipseOuter.center.x - ellipseInner.center.x;
+    let diffCenterY = ellipseOuter.center.y - ellipseInner.center.y;
+
+    let diffWidth = ellipseOuter.size.width - ellipseInner.size.width;
+    let diffHeight = ellipseOuter.size.height - ellipseInner.size.height;
+
+    let diffAngle = ellipseOuter.angle - ellipseInner.angle;
+
+    // Create the average ellipse as a new RotatedRect
+    let diffEllipse = new cv.RotatedRect();
+
+    if (direction === 'out') {
+        const avgCenterX = ellipseOuter.center.x + diffCenterX; 
+        const avgCenterY = ellipseOuter.center.y + diffCenterY;
+        const avgWidth = ellipseOuter.size.width + diffWidth;
+        const avgHeight = ellipseOuter.size.height + diffHeight;
+        const avgAngle = ellipseOuter.angle + diffAngle;
+
+        diffEllipse.center = new cv.Point(avgCenterX, avgCenterY);
+        diffEllipse.size = new cv.Size(avgWidth, avgHeight);
+        diffEllipse.angle = avgAngle;
+    } else {
+        const avgCenterX = ellipseInner.center.x - diffCenterX; 
+        const avgCenterY = ellipseInner.center.y - diffCenterY;
+        const avgWidth = ellipseInner.size.width - diffWidth;
+        const avgHeight = ellipseInner.size.height - diffHeight;
+        const avgAngle = ellipseInner.angle - diffAngle;
+
+        diffEllipse.center = new cv.Point(avgCenterX, avgCenterY);
+        diffEllipse.size = new cv.Size(avgWidth, avgHeight);
+        diffEllipse.angle = avgAngle;
+    }
+
+    return diffEllipse;
+}
+
+const getNextEllipseRecursive = (
+    ellipseOuter: cv.RotatedRect,
+    ellipseInner: cv.RotatedRect,
+    direction: 'out' | 'in',
+    count: number
+): Array<cv.RotatedRect> => {
+    if (count === 0) return [];
+    const next = getNextEllipse(ellipseOuter, ellipseInner, direction);
+    if (direction === 'out') {
+        return [next ,...getNextEllipseRecursive(next, ellipseOuter, direction, count - 1)]
+    }
+    return [next ,...getNextEllipseRecursive(ellipseInner, next, direction, count - 1)]
+}
+
+const drawEllipse = (ellipse: cv.RotatedRect, src: cv.Mat) => {
+    cv.ellipse(
+        src, // Input/output image
+        ellipse.center, // Center coordinates
+        new cv.Size(ellipse.size.width / 2, ellipse.size.height / 2), // Radii of the ellipse
+        ellipse.angle, // Rotation angle 
+        ellipse.angle - 180, // Starting angle (0 degrees)
+        ellipse.angle + 180, // Ending angle (360 degrees)
+        new cv.Scalar(255, 0, 0), // Color of the ellipse (red)
+        2, // Thickness of the ellipse outline
+        cv.LINE_AA // Line type (anti-aliased)
+    );
+    cv.circle(src, new cv.Point(ellipse.center.x, ellipse.center.y), 5, new cv.Scalar(0, 0, 255, 255), -1);
+}
+
 export const blackCircle = (src: cv.Mat) => {
     const { width, height } = src.size();
     const smallerSide = Math.min(width, height);
@@ -132,6 +218,25 @@ export const blackCircle = (src: cv.Mat) => {
         cv.LINE_AA // Line type (anti-aliased)
     );
     cv.circle(ellipseVisualisation, new cv.Point(fittedEllipse2.center.x, fittedEllipse2.center.y), 5, new cv.Scalar(0, 0, 255, 255), -1);
-    appendImage(ellipseVisualisation)
 
+    const avgEllipse = getAverageEllipse(fittedEllipse, fittedEllipse2);
+    drawEllipse(avgEllipse, ellipseVisualisation)
+    // Outer
+    const ellipsesOuter = getNextEllipseRecursive(avgEllipse, fittedEllipse2, 'out', 3)
+    console.log('ellipsesOuter', ellipsesOuter)
+    // ellipses.forEach(e => drawEllipse(e, ellipseVisualisation))
+    for (let i = 0; i < ellipsesOuter.length; i++) {
+        const e = ellipsesOuter[i]
+        drawEllipse(e, ellipseVisualisation)
+    }
+
+    // Inner
+    const ellipsesInner = getNextEllipseRecursive(avgEllipse, fittedEllipse2, 'in', 3)
+    console.log('ellipsesInner', ellipsesInner)
+    // ellipses.forEach(e => drawEllipse(e, ellipseVisualisation))
+    for (let i = 0; i < ellipsesInner.length; i++) {
+        const e = ellipsesInner[i]
+        drawEllipse(e, ellipseVisualisation)
+    }
+    appendImage(ellipseVisualisation)
 }
