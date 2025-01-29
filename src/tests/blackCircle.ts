@@ -357,24 +357,24 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
 
     // 4. Detect edges using Canny edge detector
     let edges = new cv.Mat();
-    cv.Canny(blurred, edges, 10, 40);
+    cv.Canny(blurred, edges, 5, 10);
 
     // 6. Remove target lines
     let targetLines = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
     let removedTargetLines = new cv.Mat();
     for (let i = 0; i < targetEdges.length; i++) {
-        drawEllipse(targetEdges[i], targetLines, 10);
+        drawEllipse(targetEdges[i], targetLines, 3);
     }
     cv.bitwise_not(targetLines, removedTargetLines, edges);
     
     // Apply Morphological Transformations to close gaps
     let morphed = new cv.Mat();
-    const kernel = cv.getStructuringElement(cv.MORPH_CROSS, new cv.Size(7, 7));
-    cv.morphologyEx(removedTargetLines, morphed, cv.MORPH_CROSS, kernel);
+    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5));
+    cv.morphologyEx(removedTargetLines, morphed, cv.MORPH_BLACKHAT , kernel);
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 100, 100, 20);  // Parameters for short lines
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 50, 100, 50);  // Parameters for short lines
 
     const lineStore: Array<[cv.Point, cv.Point]> = [];
     // 6. Draw the detected lines on the original image
@@ -412,7 +412,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     // 7. Show the result
     appendImage(src);
     appendImage(gray);
-    appendImage(edges);
+    appendImage(edges, 'edges');
     appendImage(targetLines, 'targetLines');
     appendImage(removedTargetLines, 'removedTargetLines');
     appendImage(morphed, 'morphed');
