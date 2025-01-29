@@ -400,11 +400,12 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     let morphed = new cv.Mat();
     const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5));
     cv.morphologyEx(removedTargetLines, morphed, cv.MORPH_BLACKHAT , kernel);
+    cv.threshold(morphed, morphed, 250, 255, cv.THRESH_BINARY);
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    const threshold = 40;
-    const minLineLength = 50;
+    const threshold = 70;
+    const minLineLength = 70;
     const maxLineGap = 40;
     cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, threshold, minLineLength, maxLineGap);  // Parameters for short lines
 
