@@ -170,7 +170,7 @@ const getNextEllipseRecursive = (
     return [next ,...getNextEllipseRecursive(ellipseInner, next, direction, count - 1)]
 }
 
-const drawEllipse = (ellipse: cv.RotatedRect, src: cv.Mat) => {
+const drawEllipse = (ellipse: cv.RotatedRect, src: cv.Mat, thickness = 2) => {
     cv.ellipse(
         src, // Input/output image
         ellipse.center, // Center coordinates
@@ -179,7 +179,7 @@ const drawEllipse = (ellipse: cv.RotatedRect, src: cv.Mat) => {
         ellipse.angle - 180, // Starting angle (0 degrees)
         ellipse.angle + 180, // Ending angle (360 degrees)
         new cv.Scalar(255, 0, 0), // Color of the ellipse (red)
-        2, // Thickness of the ellipse outline
+        thickness, // Thickness of the ellipse outline
         cv.LINE_AA // Line type (anti-aliased)
     );
     cv.circle(src, new cv.Point(ellipse.center.x, ellipse.center.y), 5, new cv.Scalar(0, 0, 255, 255), -1);
@@ -345,7 +345,7 @@ const removeOutliers = (data: number[]) => {
 
 
 
-const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
+const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges: cv.RotatedRect[]) => {
     const clone = src.clone();
 
     // 2. Convert to grayscale
@@ -358,23 +358,23 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
     // 4. Detect edges using Canny edge detector
     let edges = new cv.Mat();
     cv.Canny(blurred, edges, 10, 40);
+
+    // 6. Remove target lines
+    let targetLines = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
+    let removedTargetLines = new cv.Mat();
+    for (let i = 0; i < targetEdges.length; i++) {
+        drawEllipse(targetEdges[i], targetLines, 10);
+    }
+    cv.bitwise_not(targetLines, removedTargetLines, edges);
     
     // Apply Morphological Transformations to close gaps
     let morphed = new cv.Mat();
     const kernel = cv.getStructuringElement(cv.MORPH_CROSS, new cv.Size(7, 7));
-    cv.morphologyEx(edges, morphed, cv.MORPH_CROSS, kernel);
+    cv.morphologyEx(removedTargetLines, morphed, cv.MORPH_CROSS, kernel);
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 300, 200, 10);  // Parameters for short lines
-
-    // Draw outer circle
-    const outerCircleRadius = src.size().width / 2 * REFERENCE_CIRCLE_SCALING * OUTER_CIRCLE_SCALING;
-    const { width: imageWidth, height: imageHeight } = src.size();
-    const centerX = imageWidth / 2;
-    const centerY = imageHeight / 2;
-    const centerPoint = new cv.Point(centerX, centerY);
-    cv.circle(clone, centerPoint, outerCircleRadius, new cv.Scalar(255, 255, 255, 255), 2, cv.LINE_AA);
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 100, 100, 20);  // Parameters for short lines
 
     const lineStore: Array<[cv.Point, cv.Point]> = [];
     // 6. Draw the detected lines on the original image
@@ -393,9 +393,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
         )) {
             continue;
         }
-        
-        const distanceFromCenter = distanceBetweenPoints(targetPoint, new cv.Point(centerX, centerY));
-        if (distanceFromCenter > outerCircleRadius) continue;
+
         lineStore.push([targetPoint, tailPoint]);
     }
 
@@ -415,7 +413,9 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
     appendImage(src);
     appendImage(gray);
     appendImage(edges);
-    appendImage(morphed);
+    appendImage(targetLines, 'targetLines');
+    appendImage(removedTargetLines, 'removedTargetLines');
+    appendImage(morphed, 'morphed');
     appendImage(clone);
 
     // 8. Cleanup
@@ -427,7 +427,6 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right') => {
     return {
         dst: clone,
         points: filteredLineStore.map(([p1, p2]) => (p1)),
-        centerPoint
     };
 }
 
@@ -481,7 +480,7 @@ export const blackCircle = (src: cv.Mat) => {
     let biggestEllipseMask = generateMaskForEllipse(biggestEllipse, src);
     let insideBiggestEllipse = new cv.Mat();
     cv.bitwise_and(src, src, insideBiggestEllipse, biggestEllipseMask);
-    const { dst: dst3, points, centerPoint } = arrowDetection(insideBiggestEllipse, perspective as any) || {};
+    const { dst: dst3, points } = arrowDetection(insideBiggestEllipse, perspective as any, ellipses) || {};
     const results = processPointsAgainstEllipses(points, ellipses);
     console.log('results', results)
     const clone = src.clone();
