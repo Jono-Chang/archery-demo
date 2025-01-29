@@ -343,6 +343,32 @@ const removeOutliers = (data: number[]) => {
     return data.filter(value => value >= lowerBound && value <= upperBound);
   }
 
+const removeTinyEdges = (edges: cv.Mat) => {
+    let labels = new cv.Mat();
+    let stats = new cv.Mat();
+    let centroids = new cv.Mat();
+    cv.connectedComponentsWithStats(edges, labels, stats, centroids);
+
+    // Create an empty mask to store filtered edges
+    let filteredEdges = cv.Mat.zeros(edges.rows, edges.cols, cv.CV_8UC1);
+
+    // Loop through each connected component (skip background, i=0)
+    for (let i = 1; i < stats.rows; i++) {
+        let area = stats.intAt(i, cv.CC_STAT_AREA); // Get component size
+        if (area > 20) {  // Keep only large components (adjust threshold)
+            for (let y = 0; y < labels.rows; y++) {
+                for (let x = 0; x < labels.cols; x++) {
+                    if (labels.intAt(y, x) === i) {
+                        filteredEdges.ucharPtr(y, x)[0] = 255; // Set pixel to white
+                    }
+                }
+            }
+        }
+    }
+
+    return filteredEdges;
+}
+
 
 
 const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges: cv.RotatedRect[]) => {
@@ -357,7 +383,10 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
 
     // 4. Detect edges using Canny edge detector
     let edges = new cv.Mat();
-    cv.Canny(blurred, edges, 5, 10);
+    cv.Canny(blurred, edges, 3, 10);
+
+    // Eliminate tiny edges
+    let edgesClean = removeTinyEdges(edges);
 
     // 6. Remove target lines
     let targetLines = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
@@ -365,7 +394,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     for (let i = 0; i < targetEdges.length; i++) {
         drawEllipse(targetEdges[i], targetLines, 3);
     }
-    cv.bitwise_not(targetLines, removedTargetLines, edges);
+    cv.bitwise_not(targetLines, removedTargetLines, edgesClean);
     
     // Apply Morphological Transformations to close gaps
     let morphed = new cv.Mat();
@@ -374,7 +403,10 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, 50, 100, 50);  // Parameters for short lines
+    const threshold = 40;
+    const minLineLength = 50;
+    const maxLineGap = 40;
+    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, threshold, minLineLength, maxLineGap);  // Parameters for short lines
 
     const lineStore: Array<[cv.Point, cv.Point]> = [];
     // 6. Draw the detected lines on the original image
@@ -413,6 +445,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     appendImage(src);
     appendImage(gray);
     appendImage(edges, 'edges');
+    appendImage(edgesClean, 'edgesClean');
     appendImage(targetLines, 'targetLines');
     appendImage(removedTargetLines, 'removedTargetLines');
     appendImage(morphed, 'morphed');
