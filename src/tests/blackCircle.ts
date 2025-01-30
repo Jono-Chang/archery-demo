@@ -11,15 +11,15 @@ const getBrighterInnerEllipse = (insideBlackCircleGray: cv.Mat, regneratedblackE
     const insideBlackCircleAverageColor = cv.mean(insideBlackCircleGray, regneratedblackEllipseMask)[0];
     const blackCircleBinary = new cv.Mat();
     cv.threshold(insideBlackCircleGray, blackCircleBinary, insideBlackCircleAverageColor * scalar, 255, invert ? cv.THRESH_BINARY_INV : cv.THRESH_BINARY);
-    appendImage(blackCircleBinary, 'blackCircleBinary')
+    // appendImage(blackCircleBinary, 'blackCircleBinary')
 
     const blackCircleBlurred = new cv.Mat();
     cv.GaussianBlur(blackCircleBinary, blackCircleBlurred, new cv.Size(0, 0), 10);
-    appendImage(blackCircleBlurred, 'blackCircleBlurred');
+    // appendImage(blackCircleBlurred, 'blackCircleBlurred');
 
     const blackCircleBinary2 = new cv.Mat();
     cv.threshold(blackCircleBlurred, blackCircleBinary2, 255/2, 255, cv.THRESH_BINARY_INV);
-    appendImage(blackCircleBinary2)
+    // appendImage(blackCircleBinary2)
 
     let contours2 = new cv.MatVector();
     let hierarchy2 = new cv.Mat();
@@ -270,17 +270,17 @@ export const getEllipses = (src: cv.Mat) => {
     );
     cv.circle(ellipseVisualisation, new cv.Point(blackEllipse.center.x, blackEllipse.center.y), 5, new cv.Scalar(0, 0, 255, 255), -1);
     
-    appendImage(ellipseVisualisation)
+    // appendImage(ellipseVisualisation)
 
     let blackEllipseMask = generateMaskForEllipse(blackEllipse, src);
 
     let insideBlackCircleImage = new cv.Mat();
     cv.bitwise_and(src, src, insideBlackCircleImage, blackEllipseMask);
-    appendImage(insideBlackCircleImage)
+    // appendImage(insideBlackCircleImage)
 
     const insideBlackCircleGray = new cv.Mat();
     cv.cvtColor(insideBlackCircleImage, insideBlackCircleGray, cv.COLOR_RGBA2GRAY, 0);
-    appendImage(insideBlackCircleGray)
+    // appendImage(insideBlackCircleGray)
 
     const blueEllipse = getBrighterInnerEllipse(insideBlackCircleGray, blackEllipseMask, 1);
     drawEllipse(blueEllipse, ellipseVisualisation)
@@ -309,7 +309,7 @@ export const getEllipses = (src: cv.Mat) => {
     const yellow2Ellipses = getNextEllipseRecursive(red2Ellipse, yellowEllipse, 'in', 1)
     drawEllipse(yellow2Ellipses[0], ellipseVisualisation)
 
-    appendImage(ellipseVisualisation)
+    // appendImage(ellipseVisualisation)
 
     const ellipses = [
         whiteEllipses[1],
@@ -385,10 +385,18 @@ const removeTinyEdges = (binaryMat: cv.Mat) => {
 
 const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges: cv.RotatedRect[]) => {
     const clone = src.clone();
+    appendImage(src);
+ 
+    let scalar = new cv.Scalar(200, 200, 200);  // Scalar to add for brightening
+    let brightenedMat = new cv.Mat();  // Create an empty matrix for the result
+    let matrix = new cv.Mat(src.rows, src.cols, src.type(), scalar);
+    cv.add(src, matrix, brightenedMat);
+    
+    appendImage(brightenedMat, 'brightenedMat');
 
     // 2. Convert to grayscale
     let gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(brightenedMat, gray, cv.COLOR_RGBA2GRAY);
 
     const enhanceDark = enhanceDarkContrast(gray);
 
@@ -403,17 +411,17 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     let edgesClean = removeTinyEdges(edges);
     
     // Apply Morphological Transformations to close gaps
-    let morphed = new cv.Mat();
-    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2, 2));
-    cv.morphologyEx(edgesClean, morphed, cv.MORPH_DILATE , kernel);
-    cv.morphologyEx(morphed, morphed, cv.MORPH_CLOSE , kernel);
-    cv.threshold(morphed, morphed, 250, 255, cv.THRESH_BINARY);
+    let morphed = edgesClean; // new cv.Mat();
+    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(4, 4));
+    // cv.morphologyEx(edgesClean, morphed, cv.MORPH_DILATE , kernel);
+    // cv.morphologyEx(morphed, morphed, cv.MORPH_CLOSE , kernel);
+    // cv.threshold(morphed, morphed, 250, 255, cv.THRESH_BINARY);
 
     // 6. Remove target lines
     let targetLines = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
     let removedTargetLines = new cv.Mat();
     for (let i = 0; i < targetEdges.length; i++) {
-        drawEllipse(targetEdges[i], targetLines, 3);
+        drawEllipse(targetEdges[i], targetLines, 10);
     }
     cv.bitwise_not(targetLines, removedTargetLines, morphed);
 
@@ -427,7 +435,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    const threshold = 200;
+    const threshold = 150;
     const minLineLength = 100;
     const maxLineGap = 50;
     cv.HoughLinesP(morphed2, lines, 1, Math.PI / 180 / 5, threshold, minLineLength, maxLineGap);  // Parameters for short lines
@@ -466,7 +474,6 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     }
 
     // 7. Show the result
-    appendImage(src);
     appendImage(gray);
     appendImage(enhanceDark, 'enhanceDark');
     appendImage(blurred, 'blurred')
