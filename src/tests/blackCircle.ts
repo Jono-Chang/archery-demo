@@ -185,6 +185,15 @@ const drawEllipse = (ellipse: cv.RotatedRect, src: cv.Mat, thickness = 2) => {
     cv.circle(src, new cv.Point(ellipse.center.x, ellipse.center.y), 5, new cv.Scalar(0, 0, 255, 255), -1);
 }
 
+const enhanceDarkContrast = (grayMat: cv.Mat) => {
+    let clahe = new cv.CLAHE();
+    clahe.setClipLimit(50.0);  // Clip limit for CLAHE
+    clahe.setTilesGridSize(new cv.Size(2, 2));  // Tiles grid size (smaller tiles for finer details)
+    let enhancedMat = new cv.Mat();
+    clahe.apply(grayMat, enhancedMat);
+    return enhancedMat;
+}
+
 export const getEllipses = (src: cv.Mat) => {
     const { width, height } = src.size();
     const smallerSide = Math.min(width, height);
@@ -355,8 +364,7 @@ const removeTinyEdges = (binaryMat: cv.Mat) => {
     // Loop through detected components
     for (let i = 1; i < numLabels; i++) {  // Start from 1 (0 is background)
         let area = stats.intAt(i, cv.CC_STAT_AREA);
-        console.log('area', area)
-        if (area < 300) {  // Threshold: Remove areas smaller than 10 pixels
+        if (area < 50) {  // Threshold: Remove areas smaller than 10 pixels
             let x = stats.intAt(i, cv.CC_STAT_LEFT);
             let y = stats.intAt(i, cv.CC_STAT_TOP);
             let w = stats.intAt(i, cv.CC_STAT_WIDTH);
@@ -382,23 +390,24 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     let gray = new cv.Mat();
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    const blurred = gray;
-    cv.GaussianBlur(blurred, gray, new cv.Size(0, 0), 2);
+    const enhanceDark = enhanceDarkContrast(gray);
+
+    const blurred = new cv.Mat();
+    cv.GaussianBlur(enhanceDark, blurred, new cv.Size(0, 0), 2);
 
     // 4. Detect edges using Canny edge detector
     let edges = new cv.Mat();
-    cv.Canny(blurred, edges, 3, 10);
+    cv.Canny(blurred, edges, 15, 20);
+
+    // Eliminate tiny edges
+    let edgesClean = removeTinyEdges(edges);
     
     // Apply Morphological Transformations to close gaps
     let morphed = new cv.Mat();
     const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2, 2));
-    cv.morphologyEx(edges, morphed, cv.MORPH_DILATE , kernel);
+    cv.morphologyEx(edgesClean, morphed, cv.MORPH_DILATE , kernel);
     cv.morphologyEx(morphed, morphed, cv.MORPH_CLOSE , kernel);
     cv.threshold(morphed, morphed, 250, 255, cv.THRESH_BINARY);
-
-    
-    // Eliminate tiny edges
-    let edgesClean = removeTinyEdges(morphed);
 
     // 6. Remove target lines
     let targetLines = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
@@ -406,13 +415,13 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     for (let i = 0; i < targetEdges.length; i++) {
         drawEllipse(targetEdges[i], targetLines, 3);
     }
-    cv.bitwise_not(targetLines, removedTargetLines, edgesClean);
+    cv.bitwise_not(targetLines, removedTargetLines, morphed);
 
     // Apply Morphological Transformations to close gaps
     let morphed2 = new cv.Mat();
-    const kernel2 = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(6, 6));
+    const kernel2 = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
     cv.morphologyEx(removedTargetLines, morphed2, cv.MORPH_DILATE , kernel2);
-    cv.morphologyEx(morphed2, morphed2, cv.MORPH_CLOSE , kernel);
+    // cv.morphologyEx(morphed2, morphed2, cv.MORPH_CLOSE , kernel);
     cv.threshold(morphed2, morphed2, 250, 255, cv.THRESH_BINARY);
     
 
@@ -420,8 +429,8 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     let lines = new cv.Mat();
     const threshold = 200;
     const minLineLength = 100;
-    const maxLineGap = 6;
-    cv.HoughLinesP(morphed2, lines, 1, Math.PI / 180 / 2, threshold, minLineLength, maxLineGap);  // Parameters for short lines
+    const maxLineGap = 50;
+    cv.HoughLinesP(morphed2, lines, 1, Math.PI / 180 / 5, threshold, minLineLength, maxLineGap);  // Parameters for short lines
 
     const lineStore: Array<[cv.Point, cv.Point]> = [];
     // 6. Draw the detected lines on the original image
@@ -459,6 +468,8 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     // 7. Show the result
     appendImage(src);
     appendImage(gray);
+    appendImage(enhanceDark, 'enhanceDark');
+    appendImage(blurred, 'blurred')
     appendImage(edges, 'edges');
     // appendImage(targetLines, 'targetLines');
     appendImage(morphed, 'morphed');
