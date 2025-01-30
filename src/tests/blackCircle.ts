@@ -343,30 +343,34 @@ const removeOutliers = (data: number[]) => {
     return data.filter(value => value >= lowerBound && value <= upperBound);
   }
 
-const removeTinyEdges = (edges: cv.Mat) => {
+const removeTinyEdges = (binaryMat: cv.Mat) => {
     let labels = new cv.Mat();
     let stats = new cv.Mat();
     let centroids = new cv.Mat();
-    cv.connectedComponentsWithStats(edges, labels, stats, centroids);
+    const output = binaryMat.clone();
 
-    // Create an empty mask to store filtered edges
-    let filteredEdges = cv.Mat.zeros(edges.rows, edges.cols, cv.CV_8UC1);
+    // Find connected components
+    let numLabels = cv.connectedComponentsWithStats(binaryMat, labels, stats, centroids);
 
-    // Loop through each connected component (skip background, i=0)
-    for (let i = 1; i < stats.rows; i++) {
-        let area = stats.intAt(i, cv.CC_STAT_AREA); // Get component size
-        if (area > 20) {  // Keep only large components (adjust threshold)
-            for (let y = 0; y < labels.rows; y++) {
-                for (let x = 0; x < labels.cols; x++) {
-                    if (labels.intAt(y, x) === i) {
-                        filteredEdges.ucharPtr(y, x)[0] = 255; // Set pixel to white
-                    }
-                }
-            }
+    // Loop through detected components
+    for (let i = 1; i < numLabels; i++) {  // Start from 1 (0 is background)
+        let area = stats.intAt(i, cv.CC_STAT_AREA);
+        console.log('area', area)
+        if (area < 300) {  // Threshold: Remove areas smaller than 10 pixels
+            let x = stats.intAt(i, cv.CC_STAT_LEFT);
+            let y = stats.intAt(i, cv.CC_STAT_TOP);
+            let w = stats.intAt(i, cv.CC_STAT_WIDTH);
+            let h = stats.intAt(i, cv.CC_STAT_HEIGHT);
+            output.roi(new cv.Rect(x, y, w, h)).setTo(new cv.Scalar(0));  // Erase small dots
         }
     }
 
-    return filteredEdges;
+    // Cleanup
+    labels.delete();
+    stats.delete();
+    centroids.delete();
+
+    return output
 }
 
 
@@ -384,9 +388,17 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     // 4. Detect edges using Canny edge detector
     let edges = new cv.Mat();
     cv.Canny(blurred, edges, 3, 10);
+    
+    // Apply Morphological Transformations to close gaps
+    let morphed = new cv.Mat();
+    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2, 2));
+    cv.morphologyEx(edges, morphed, cv.MORPH_DILATE , kernel);
+    cv.morphologyEx(morphed, morphed, cv.MORPH_CLOSE , kernel);
+    cv.threshold(morphed, morphed, 250, 255, cv.THRESH_BINARY);
 
+    
     // Eliminate tiny edges
-    let edgesClean = removeTinyEdges(edges);
+    let edgesClean = removeTinyEdges(morphed);
 
     // 6. Remove target lines
     let targetLines = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
@@ -395,19 +407,21 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
         drawEllipse(targetEdges[i], targetLines, 3);
     }
     cv.bitwise_not(targetLines, removedTargetLines, edgesClean);
-    
+
     // Apply Morphological Transformations to close gaps
-    let morphed = new cv.Mat();
-    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5));
-    cv.morphologyEx(removedTargetLines, morphed, cv.MORPH_BLACKHAT , kernel);
-    cv.threshold(morphed, morphed, 250, 255, cv.THRESH_BINARY);
+    let morphed2 = new cv.Mat();
+    const kernel2 = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(6, 6));
+    cv.morphologyEx(removedTargetLines, morphed2, cv.MORPH_DILATE , kernel2);
+    cv.morphologyEx(morphed2, morphed2, cv.MORPH_CLOSE , kernel);
+    cv.threshold(morphed2, morphed2, 250, 255, cv.THRESH_BINARY);
+    
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    const threshold = 70;
-    const minLineLength = 70;
-    const maxLineGap = 40;
-    cv.HoughLinesP(morphed, lines, 1, Math.PI / 180, threshold, minLineLength, maxLineGap);  // Parameters for short lines
+    const threshold = 200;
+    const minLineLength = 100;
+    const maxLineGap = 6;
+    cv.HoughLinesP(morphed2, lines, 1, Math.PI / 180 / 2, threshold, minLineLength, maxLineGap);  // Parameters for short lines
 
     const lineStore: Array<[cv.Point, cv.Point]> = [];
     // 6. Draw the detected lines on the original image
@@ -446,10 +460,11 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     appendImage(src);
     appendImage(gray);
     appendImage(edges, 'edges');
-    appendImage(edgesClean, 'edgesClean');
-    appendImage(targetLines, 'targetLines');
-    appendImage(removedTargetLines, 'removedTargetLines');
+    // appendImage(targetLines, 'targetLines');
     appendImage(morphed, 'morphed');
+    appendImage(edgesClean, 'edgesClean');
+    appendImage(removedTargetLines, 'removedTargetLines');
+    appendImage(morphed2, 'morphed2');
     appendImage(clone);
 
     // 8. Cleanup
