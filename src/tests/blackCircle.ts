@@ -1,6 +1,6 @@
 
 import cv from "@techstark/opencv-js";
-import { appendImage } from "../helper/appendImage";
+import { appendImage, appendResult } from "../helper/appendImage";
 
 const REFERENCE_CIRCLE_SCALING = 0.7;
 const OUTER_CIRCLE_SCALING = 1.29;
@@ -581,4 +581,6 @@ export const blackCircle = (src: cv.Mat) => {
         cv.putText(clone, `${results[i].ellipseIndex + 1}`, results[i].point, cv.FONT_HERSHEY_SIMPLEX, 0.5, new cv.Scalar(255, 255, 255), 1);
     }
     appendImage(clone);
+    const result = results.reduce((prev, curr) => prev + curr.ellipseIndex + 1, 0);
+    appendResult(result);
 }

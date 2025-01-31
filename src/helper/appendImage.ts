@@ -10,3 +10,11 @@ if (label) {
 }
 canvasContainer!.appendChild(image0);
 }
+
+export const appendResult = (result: number) => {
+    const canvasContainer = document.getElementById('canvasContainer');
+    const h1 = document.createElement("h1");
+    h1.innerHTML = `Result: ${result}`;
+    canvasContainer!.appendChild(h1);
+    console.log('result', result);
+}
