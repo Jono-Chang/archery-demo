@@ -7,6 +7,20 @@ const OUTER_CIRCLE_SCALING = 1.29;
 
 const ARROW_MIN_DISTANCE = 10;
 
+const adjustGamma = (image: cv.Mat, gamma = 0.01) => {
+    let lookUpTable = new cv.Mat(1, 256, cv.CV_8U);
+    let tableData = lookUpTable.data;
+    
+    for (let i = 0; i < 256; i++) {
+        tableData[i] = Math.pow(i / 255.0, gamma) * 255.0;
+    }
+
+    let result = new cv.Mat();
+    cv.LUT(image, lookUpTable, result);
+    lookUpTable.delete();
+    return result;
+}
+
 const getBrighterInnerEllipse = (insideBlackCircleGray: cv.Mat, regneratedblackEllipseMask: cv.Mat, scalar = 1, invert = true) => {
     const insideBlackCircleAverageColor = cv.mean(insideBlackCircleGray, regneratedblackEllipseMask)[0];
     const blackCircleBinary = new cv.Mat();
@@ -399,9 +413,12 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     cv.cvtColor(brightenedMat, gray, cv.COLOR_RGBA2GRAY);
 
     const enhanceDark = enhanceDarkContrast(gray);
+    appendImage(enhanceDark, 'enhanceDark');
+    const enhanceDark2 = adjustGamma(enhanceDark);
+    appendImage(enhanceDark2, 'enhanceDark2');
 
     const blurred = new cv.Mat();
-    cv.GaussianBlur(enhanceDark, blurred, new cv.Size(0, 0), 2);
+    cv.GaussianBlur(enhanceDark2, blurred, new cv.Size(0, 0), 2);
 
     // 4. Detect edges using Canny edge detector
     let edges = new cv.Mat();
@@ -474,8 +491,6 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     }
 
     // 7. Show the result
-    appendImage(gray);
-    appendImage(enhanceDark, 'enhanceDark');
     appendImage(blurred, 'blurred')
     appendImage(edges, 'edges');
     // appendImage(targetLines, 'targetLines');
