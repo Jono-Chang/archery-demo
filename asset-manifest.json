@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/archery-demo/static/css/main.f855e6bc.css",
+    "main.js": "/archery-demo/static/js/main.43bfa31e.js",
+    "static/js/453.d05720ec.chunk.js": "/archery-demo/static/js/453.d05720ec.chunk.js",
+    "index.html": "/archery-demo/index.html",
+    "main.f855e6bc.css.map": "/archery-demo/static/css/main.f855e6bc.css.map",
+    "main.43bfa31e.js.map": "/archery-demo/static/js/main.43bfa31e.js.map",
+    "453.d05720ec.chunk.js.map": "/archery-demo/static/js/453.d05720ec.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.f855e6bc.css",
+    "static/js/main.43bfa31e.js"
+  ]
+}
