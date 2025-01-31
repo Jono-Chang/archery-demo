@@ -7,14 +7,14 @@ const OUTER_CIRCLE_SCALING = 1.29;
 
 const ARROW_MIN_DISTANCE = 10;
 
-const adjustGamma = (image: cv.Mat, gamma = 0.01) => {
+const adjustGamma = (image: cv.Mat, gamma = 0.5) => {
     let lookUpTable = new cv.Mat(1, 256, cv.CV_8U);
     let tableData = lookUpTable.data;
     
     for (let i = 0; i < 256; i++) {
         tableData[i] = Math.pow(i / 255.0, gamma) * 255.0;
     }
-
+    
     let result = new cv.Mat();
     cv.LUT(image, lookUpTable, result);
     lookUpTable.delete();
@@ -366,6 +366,10 @@ const removeOutliers = (data: number[]) => {
     return data.filter(value => value >= lowerBound && value <= upperBound);
   }
 
+const getHypotenuse = (width: number, height: number) => {
+    return Math.sqrt(width ** 2 + height ** 2);
+}
+
 const removeTinyEdges = (binaryMat: cv.Mat) => {
     let labels = new cv.Mat();
     let stats = new cv.Mat();
@@ -378,13 +382,20 @@ const removeTinyEdges = (binaryMat: cv.Mat) => {
     // Loop through detected components
     for (let i = 1; i < numLabels; i++) {  // Start from 1 (0 is background)
         let area = stats.intAt(i, cv.CC_STAT_AREA);
-        if (area < 50) {  // Threshold: Remove areas smaller than 10 pixels
-            let x = stats.intAt(i, cv.CC_STAT_LEFT);
-            let y = stats.intAt(i, cv.CC_STAT_TOP);
-            let w = stats.intAt(i, cv.CC_STAT_WIDTH);
-            let h = stats.intAt(i, cv.CC_STAT_HEIGHT);
+        let w = stats.intAt(i, cv.CC_STAT_WIDTH);
+        let h = stats.intAt(i, cv.CC_STAT_HEIGHT);
+        let x = stats.intAt(i, cv.CC_STAT_LEFT);
+        let y = stats.intAt(i, cv.CC_STAT_TOP);
+        let hypotenuse = Math.abs(Math.ceil(getHypotenuse(w, h))) * 1.1; // Number of pixels that are in the diagonal line
+        // If the coloured in pixels are more than the number
+        // of pixels if the box only has a straight line, delete it
+        if ((area > hypotenuse && area < 40) || area < 10) {  
             output.roi(new cv.Rect(x, y, w, h)).setTo(new cv.Scalar(0));  // Erase small dots
+            
         }
+        // if (area < 30) {  // Threshold: Remove areas smaller than 10 pixels
+        //     output.roi(new cv.Rect(x, y, w, h)).setTo(new cv.Scalar(0));
+        // }
     }
 
     // Cleanup
@@ -402,15 +413,15 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     appendImage(src);
  
     let scalar = new cv.Scalar(200, 200, 200);  // Scalar to add for brightening
-    let brightenedMat = new cv.Mat();  // Create an empty matrix for the result
-    let matrix = new cv.Mat(src.rows, src.cols, src.type(), scalar);
-    cv.add(src, matrix, brightenedMat);
+    // let brightenedMat = new cv.Mat();  // Create an empty matrix for the result
+    // let matrix = new cv.Mat(src.rows, src.cols, src.type(), scalar);
+    // cv.add(src, matrix, brightenedMat);
     
-    appendImage(brightenedMat, 'brightenedMat');
+    // appendImage(brightenedMat, 'brightenedMat');
 
     // 2. Convert to grayscale
     let gray = new cv.Mat();
-    cv.cvtColor(brightenedMat, gray, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
     const enhanceDark = enhanceDarkContrast(gray);
     appendImage(enhanceDark, 'enhanceDark');
@@ -454,7 +465,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     let lines = new cv.Mat();
     const threshold = 150;
     const minLineLength = 100;
-    const maxLineGap = 50;
+    const maxLineGap = 20;
     cv.HoughLinesP(morphed2, lines, 1, Math.PI / 180 / 5, threshold, minLineLength, maxLineGap);  // Parameters for short lines
 
     const lineStore: Array<[cv.Point, cv.Point]> = [];
@@ -494,8 +505,8 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
     appendImage(blurred, 'blurred')
     appendImage(edges, 'edges');
     // appendImage(targetLines, 'targetLines');
-    appendImage(morphed, 'morphed');
     appendImage(edgesClean, 'edgesClean');
+    appendImage(morphed, 'morphed');
     appendImage(removedTargetLines, 'removedTargetLines');
     appendImage(morphed2, 'morphed2');
     appendImage(clone);
