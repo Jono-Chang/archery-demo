@@ -37,17 +37,17 @@ function App() {
   const submitImage = async (event: any) => {
     console.log('submitImage');
     const file = event.target.files[0]; // Get the first file
-
-    if (file) {
-      // processImage(cv.imread(arrayBuffer));
-      // const img = new Image();
-      // img.src = URL.createObjectURL(file);
-      // img.onload = () => processImage(cv.imread(img));
+    if (!file) return;
+    let img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = function () {
+      processImage(cv.imread(img));
     }
   };
 
   return (
     <div className="App">
+      <input type="file" id="picture" name="picture" accept="image/*" capture="environment" onChange={submitImage} />
       {
         <img
           id="testImage"
