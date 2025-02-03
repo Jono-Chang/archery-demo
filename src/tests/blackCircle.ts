@@ -463,7 +463,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    const threshold = 150;
+    const threshold = 100;
     const minLineLength = 100;
     const maxLineGap = 20;
     cv.HoughLinesP(morphed2, lines, 1, Math.PI / 180 / 5, threshold, minLineLength, maxLineGap);  // Parameters for short lines
@@ -566,10 +566,32 @@ const processPointsAgainstEllipses = (points: cv.Point[], ellipses: cv.RotatedRe
     return result;
 }
 
-export const blackCircle = (src: cv.Mat) => {
+const resizeImage = (src: cv.Mat) => {
+    const { width, height } = src.size();
+    let dst = new cv.Mat();
+    const smallerSideDimension = 900;
+
+    const generateNewSize = () => {
+        if (width > height) {
+            return new cv.Size(
+                smallerSideDimension,
+                Math.round(smallerSideDimension * height / width
+            ))
+        }
+        return new cv.Size(
+            Math.round(smallerSideDimension * width / height),
+            smallerSideDimension
+        )
+    }
+    let dsize = generateNewSize();
+    cv.resize(src, dst, dsize, 0, 0, cv.INTER_AREA);
+    return dst;
+}
+
+export const blackCircle = (original: cv.Mat) => {
+    const src = resizeImage(original);
     const { ellipses, ellipseVisualisation, perspective } = getEllipses(src);
     const biggestEllipse = ellipses[0];
-    
     let biggestEllipseMask = generateMaskForEllipse(biggestEllipse, src);
     let insideBiggestEllipse = new cv.Mat();
     cv.bitwise_and(src, src, insideBiggestEllipse, biggestEllipseMask);
