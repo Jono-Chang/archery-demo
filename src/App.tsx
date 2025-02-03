@@ -47,7 +47,7 @@ function App() {
 
   return (
     <div className="App">
-      <input type="file" id="picture" name="picture" accept="image/*" onChange={submitImage} />
+      <input type="file" id="picture" name="picture" accept="image/png, image/jpeg" onChange={submitImage} />
       {
         <img
           id="testImage"

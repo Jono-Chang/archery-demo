@@ -463,7 +463,7 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
 
     // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
     let lines = new cv.Mat();
-    const threshold = 100;
+    const threshold = 50;
     const minLineLength = 100;
     const maxLineGap = 20;
     cv.HoughLinesP(morphed2, lines, 1, Math.PI / 180 / 5, threshold, minLineLength, maxLineGap);  // Parameters for short lines
