@@ -51,7 +51,7 @@ function App() {
       {
         <img
           id="testImage"
-          src={'/test/test1.jpg'}
+          src={'/archery-demo/test/test1.jpg'}
           alt="Image"
           style={{ display:'none' }}
           onLoad={(e) => {
