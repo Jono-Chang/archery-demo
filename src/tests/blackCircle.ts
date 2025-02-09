@@ -7,6 +7,51 @@ const OUTER_CIRCLE_SCALING = 1.29;
 
 const ARROW_MIN_DISTANCE = 10;
 
+function rotateImage(mat: cv.Mat, angle: number, size: number) {
+    let center = new cv.Point(mat.cols / 2, mat.rows / 2);
+    let rotMat = cv.getRotationMatrix2D(center, angle, 1);
+    let dst = new cv.Mat();
+    cv.warpAffine(mat, dst, rotMat, new cv.Size(size, size), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(0));
+    rotMat.delete();
+    // Calculate the center region to crop (1/zoomFactor of the original size)
+    const zoomFactor = 1.4
+    let cropWidth = Math.round(size / zoomFactor);
+    let cropHeight = Math.round(size / zoomFactor);
+    let startX = Math.round((size - cropWidth) / 2);
+    let startY = Math.round((size - cropHeight) / 2);
+
+    // Crop the center region
+    let centerRegion = dst.roi(new cv.Rect(startX, startY, cropWidth, cropHeight));
+    return centerRegion;
+  }
+
+  function createUTemplate(templateWidth = 20) {
+  
+    // Calculate the template height proportional to the width
+    let templateHeight = Math.round(templateWidth);  // Height is 200% of the width
+  
+    // Create a blank binary image with the specified size
+    let uTemplate = cv.Mat.zeros(templateHeight, templateWidth, cv.CV_8UC1);
+  
+    // Adjustable parameters for the "U" shape
+    let thickness = 1.5;
+    let armLength = Math.round(templateHeight * 0.5);  // Arm length (70% of the height)
+    let armOffset = Math.round(templateWidth * 0.2);   // Distance between the arms (40% of the width)
+  
+    // Left vertical arm of the "U"
+    cv.line(uTemplate, new cv.Point((templateWidth - armOffset) / 2, 0), new cv.Point((templateWidth - armOffset) / 2, armLength), new cv.Scalar(255), thickness);
+  
+    // Right vertical arm of the "U"
+    cv.line(uTemplate, new cv.Point((templateWidth + armOffset) / 2, 0), new cv.Point((templateWidth + armOffset) / 2, armLength), new cv.Scalar(255), thickness);
+    
+    // Bottom
+    cv.line(uTemplate, new cv.Point((templateWidth - armOffset) / 2, armLength + 1), new cv.Point((templateWidth + armOffset) / 2, armLength + 1), new cv.Scalar(255), thickness);
+  
+    return uTemplate;
+  }
+  
+  
+
 const adjustGamma = (image: cv.Mat, gamma = 0.5) => {
     let lookUpTable = new cv.Mat(1, 256, cv.CV_8U);
     let tableData = lookUpTable.data;
@@ -411,6 +456,7 @@ const removeTinyEdges = (binaryMat: cv.Mat) => {
 const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges: cv.RotatedRect[]) => {
     const clone = src.clone();
     appendImage(src);
+    appendImage(createUTemplate());
  
     let scalar = new cv.Scalar(200, 200, 200);  // Scalar to add for brightening
     // let brightenedMat = new cv.Mat();  // Create an empty matrix for the result
@@ -437,89 +483,71 @@ const arrowDetection = (src: cv.Mat, perspective: 'left' | 'right', targetEdges:
 
     // Eliminate tiny edges
     let edgesClean = removeTinyEdges(edges);
-    
-    // Apply Morphological Transformations to close gaps
-    let morphed = edgesClean; // new cv.Mat();
-    const kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(4, 4));
-    // cv.morphologyEx(edgesClean, morphed, cv.MORPH_DILATE , kernel);
-    // cv.morphologyEx(morphed, morphed, cv.MORPH_CLOSE , kernel);
-    // cv.threshold(morphed, morphed, 250, 255, cv.THRESH_BINARY);
 
-    // 6. Remove target lines
-    let targetLines = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
-    let removedTargetLines = new cv.Mat();
-    for (let i = 0; i < targetEdges.length; i++) {
-        drawEllipse(targetEdges[i], targetLines, 10);
-    }
-    cv.bitwise_not(targetLines, removedTargetLines, morphed);
+    let template = createUTemplate(); // Function to create the "U" shape template
 
-    // Apply Morphological Transformations to close gaps
-    let morphed2 = new cv.Mat();
-    const kernel2 = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
-    cv.morphologyEx(removedTargetLines, morphed2, cv.MORPH_DILATE , kernel2);
-    // cv.morphologyEx(morphed2, morphed2, cv.MORPH_CLOSE , kernel);
-    cv.threshold(morphed2, morphed2, 250, 255, cv.THRESH_BINARY);
-    
+      const matchingList: {angle: number, position: cv.Point }[] = [];
+      const visual = new cv.Mat();
+      cv.cvtColor(edgesClean, visual, cv.COLOR_GRAY2RGB);
 
-    // 5. Detect lines using HoughLinesP (Probabilistic Hough Line Transform)
-    let lines = new cv.Mat();
-    const threshold = 50;
-    const minLineLength = 100;
-    const maxLineGap = 20;
-    cv.HoughLinesP(morphed2, lines, 1, Math.PI / 180 / 5, threshold, minLineLength, maxLineGap);  // Parameters for short lines
+      // Rotate the template at multiple angles and apply template matching
+      for (let scale = 1; scale < 1.5; scale += 0.2) {
+        for (let angle = 0; angle < 360; angle += 5) {
+            const matchSize = 20;
+            let rotatedTemplate = rotateImage(template, angle, matchSize);
 
-    const lineStore: Array<[cv.Point, cv.Point]> = [];
-    // 6. Draw the detected lines on the original image
-    for (let i = 0; i < lines.rows; i++) {
-        let x1 = lines.data32S[i * 4];
-        let y1 = lines.data32S[i * 4 + 1];
-        let x2 = lines.data32S[i * 4 + 2];
-        let y2 = lines.data32S[i * 4 + 3];
-
-        const targetPoint = perspective === 'left' ? new cv.Point(x1, y1) : new cv.Point(x2, y2);
-        const tailPoint = perspective === 'left' ? new cv.Point(x2, y2) : new cv.Point(x1, y1);
-
-        if (lineStore.some(
-            ([p1, p2]) => distanceBetweenPoints(targetPoint, p1) < ARROW_MIN_DISTANCE
-              || distanceBetweenPoints(tailPoint, p2) < ARROW_MIN_DISTANCE
-        )) {
-            continue;
+            const resizedTemplate = new cv.Mat();
+            const newSize = new cv.Size(matchSize * scale, matchSize * scale);
+            cv.resize(rotatedTemplate, resizedTemplate, newSize, 0, 0, cv.INTER_LINEAR);
+            appendImage(resizedTemplate);
+            let matchResult = new cv.Mat();
+            
+            // Apply template matching
+            // cv.matchTemplate(edgesClean, resizedTemplate, matchResult, cv.TM_CCOEFF_NORMED);
+            
+            // const matchWidth = rotatedTemplate.cols;
+            // const matchHeight = rotatedTemplate.rows;
+            // const threshold = 0.6;
+            // for (let y = 0; y < matchResult.rows; y++) {
+            //     for (let x = 0; x < matchResult.cols; x++) {
+            //     let score = matchResult.floatAt(y, x);
+            //     if (score >= threshold) {
+            //         // Draw a rectangle around the detected region
+            //         let topLeft = new cv.Point(x, y);
+            //         let bottomRight = new cv.Point(x + matchWidth, y + matchHeight);
+            //         cv.rectangle(visual, topLeft, bottomRight, new cv.Scalar(0, score * 255, 0), 2);
+            //         matchingList.push({
+            //             angle,
+            //             position: new cv.Point(x + matchWidth / 2, y + matchHeight / 2),
+            //         });
+            //     }
+            //     }
+            // }
+            
+            matchResult.delete();
+            rotatedTemplate.delete();
         }
+      }
 
-        lineStore.push([targetPoint, tailPoint]);
-    }
-
-    // Remove length outliers
-    const lengths = lineStore.map(([p1, p2]) => distanceBetweenPoints(p1, p2));
-    const nonOutlierLengths = removeOutliers(lengths);
-    const filteredLineStore = lineStore//.filter((_, i) => nonOutlierLengths.includes(lengths[i]));
-
-    // Draw the detected lines on the original image
-    for (let i = 0; i < filteredLineStore.length; i++) {
-        const [targetPoint, tailPoint] = filteredLineStore[i];
-        cv.line(clone, targetPoint, tailPoint, new cv.Scalar(255, 255, 255), 1, cv.LINE_AA);
-        cv.circle(clone, targetPoint, 1, new cv.Scalar(0, 255, 0), -1);
-    }
+      // Draw a rectangle at the best match location
 
     // 7. Show the result
     appendImage(blurred, 'blurred')
     appendImage(edges, 'edges');
     // appendImage(targetLines, 'targetLines');
     appendImage(edgesClean, 'edgesClean');
-    appendImage(morphed, 'morphed');
-    appendImage(removedTargetLines, 'removedTargetLines');
-    appendImage(morphed2, 'morphed2');
+    // appendImage(morphed, 'morphed');
+    appendImage(visual, 'visual');
     appendImage(clone);
 
     // 8. Cleanup
     gray.delete();
     // blurred.delete();
     edges.delete();
-    lines.delete();
 
     return {
         dst: clone,
-        points: filteredLineStore.map(([p1, p2]) => (p1)),
+        points: matchingList.map((m) => (m.position)),
     };
 }
 
